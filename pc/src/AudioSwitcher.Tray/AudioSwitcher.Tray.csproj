@@ -7,7 +7,14 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>AudioSwitcher</AssemblyName>
+    <!-- アイコンは tools/icon/MakeIcons.cs で作る。 -->
+    <ApplicationIcon>Icons\app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Icons\app.ico" LogicalName="AudioSwitcher.Icons.app.ico" />
+    <EmbeddedResource Include="Icons\idle.ico" LogicalName="AudioSwitcher.Icons.idle.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
