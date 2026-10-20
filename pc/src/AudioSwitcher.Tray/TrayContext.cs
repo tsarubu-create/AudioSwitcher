@@ -117,7 +117,7 @@ internal sealed class TrayContext : ApplicationContext
             return;
         }
 
-        _codeForm ??= new PairingCodeForm(_windowIcon);
+        _codeForm ??= new PairingCodeForm(_windowIcon, _log.CreateLogger(typeof(PairingCodeForm).FullName!));
         _codeForm.ShowCode(code);
     }
 
