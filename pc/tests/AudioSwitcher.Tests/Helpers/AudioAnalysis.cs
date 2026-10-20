@@ -48,6 +48,23 @@ internal static class AudioAnalysis
         return samples.Length == 0 ? 0 : Math.Sqrt(sum / samples.Length);
     }
 
+    /// <summary>
+    /// ある周波数の強さ（Goertzel 法）。途中に無音が混じっても、含まれる周波数の比べ合いは崩れにくい。
+    /// </summary>
+    public static double TonePower(ReadOnlySpan<float> mono, double frequency)
+    {
+        double coeff = 2 * Math.Cos(2 * Math.PI * frequency / StreamFormat.SampleRate);
+        double s1 = 0, s2 = 0;
+        foreach (float x in mono)
+        {
+            double s0 = x + coeff * s1 - s2;
+            s2 = s1;
+            s1 = s0;
+        }
+
+        return (s1 * s1 + s2 * s2 - coeff * s1 * s2) / mono.Length;
+    }
+
     /// <summary>上向きに 0 をまたいだ回数から周波数を見積もる。</summary>
     public static double EstimateFrequency(ReadOnlySpan<float> mono)
     {

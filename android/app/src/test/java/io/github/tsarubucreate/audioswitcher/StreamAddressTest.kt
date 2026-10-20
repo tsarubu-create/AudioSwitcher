@@ -21,6 +21,12 @@ class StreamAddressTest {
     }
 
     @Test
+    fun ペアリングの受け口の土台のURLも作れる() {
+        assertEquals("http://192.168.1.5:48100", StreamAddress.toBaseUrl("192.168.1.5"))
+        assertNull(StreamAddress.toBaseUrl("pc name"))
+    }
+
+    @Test
     fun 読めない書き方はnullを返す() {
         assertNull(StreamAddress.toStreamUrl(""))
         assertNull(StreamAddress.toStreamUrl("192.168.1.5:"))

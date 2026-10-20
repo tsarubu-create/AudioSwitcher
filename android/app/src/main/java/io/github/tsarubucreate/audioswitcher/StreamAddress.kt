@@ -12,8 +12,11 @@ object StreamAddress {
 
     private val hostPattern = Regex("^[A-Za-z0-9.-]+$")
 
-    /** 読めなければ null を返す。 */
-    fun toStreamUrl(input: String): String? {
+    /** 配信の URL。読めなければ null を返す。 */
+    fun toStreamUrl(input: String): String? = toBaseUrl(input)?.let { it + STREAM_PATH }
+
+    /** PC の受け口の土台の URL（`http://ホスト:ポート`）。読めなければ null を返す。 */
+    fun toBaseUrl(input: String): String? {
         var rest = input.trim()
         if (rest.startsWith("http://", ignoreCase = true)) {
             rest = rest.substring("http://".length)
@@ -33,6 +36,6 @@ object StreamAddress {
         }
 
         if (!hostPattern.matches(host) || port !in 1..65535) return null
-        return "http://$host:$port$STREAM_PATH"
+        return "http://$host:$port"
     }
 }

@@ -11,6 +11,9 @@ import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -24,6 +27,8 @@ import androidx.media3.session.MediaSessionService
  *
  * 通知・ロック画面の操作・オーディオフォーカス・Wi-Fi ロックは Media3 に任せる（docs/構成.md の 2.2）。
  * 切れたら [ReconnectPolicy] の間をあけて繋ぎ直す。利用者が停止を押したら繋ぎ直さない。
+ * PC には、ペアリングで受け取った鍵を `Authorization` ヘッダで渡す。PC が鍵を認めなければ（401）、
+ * 鍵を捨てて止まる（PC 側でペアリングを解除したとき。繋ぎ直さない）。
  */
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
@@ -31,6 +36,7 @@ class PlaybackService : MediaSessionService() {
     private val handler = Handler(Looper.getMainLooper())
     private val reconnect = ReconnectPolicy()
     private val retry = Runnable { retryNow() }
+    private val keyStorage by lazy { KeyStorage(this) }
 
     override fun onCreate() {
         super.onCreate()
@@ -44,7 +50,9 @@ class PlaybackService : MediaSessionService() {
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
         val player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(this).setLoadErrorHandlingPolicy(NoResumeLoadErrorPolicy()))
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(dataSourceWithKey()).setLoadErrorHandlingPolicy(NoResumeLoadErrorPolicy()),
+            )
             .setLoadControl(loadControl)
             .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
             .setHandleAudioBecomingNoisy(true)
@@ -62,6 +70,13 @@ class PlaybackService : MediaSessionService() {
             .setSessionActivity(openApp)
             .build()
     }
+
+    /** 開くたびに、その時点で保存している鍵をヘッダに付ける（ペアリングし直したあとも作り直さずに済む）。 */
+    private fun dataSourceWithKey(): ResolvingDataSource.Factory =
+        ResolvingDataSource.Factory(DefaultHttpDataSource.Factory()) { dataSpec ->
+            val key = keyStorage.load() ?: return@Factory dataSpec
+            dataSpec.withAdditionalHeaders(mapOf("Authorization" to "Bearer $key"))
+        }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
@@ -102,6 +117,15 @@ class PlaybackService : MediaSessionService() {
 
     private inner class PlayerListener(private val player: Player) : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
+            if (isUnauthorized(error)) {
+                Log.w(TAG, "PC が鍵を認めなかったので、鍵を捨てて止める")
+                handler.removeCallbacks(retry)
+                keyStorage.clear(KeyStorage.NOTICE_UNPAIRED_BY_PC)
+                player.pause()
+                player.stop()
+                return
+            }
+
             // 繋ぎ直しのたびに出るので、スタックトレースは書かず、いちばん奥の原因だけを残す。
             var cause: Throwable = error
             while (cause.cause != null) cause = cause.cause!!
@@ -134,6 +158,15 @@ class PlaybackService : MediaSessionService() {
      */
     private class NoResumeLoadErrorPolicy : DefaultLoadErrorHandlingPolicy() {
         override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long = C.TIME_UNSET
+    }
+
+    private fun isUnauthorized(error: PlaybackException): Boolean {
+        var cause: Throwable? = error
+        while (cause != null) {
+            if (cause is HttpDataSource.InvalidResponseCodeException && cause.responseCode == 401) return true
+            cause = cause.cause
+        }
+        return false
     }
 
     private companion object {
