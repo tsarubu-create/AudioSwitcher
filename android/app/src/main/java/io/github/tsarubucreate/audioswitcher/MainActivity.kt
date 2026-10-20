@@ -169,19 +169,20 @@ private data class PlayerUiState(
     val playWhenReady: Boolean = false,
     val isPlaying: Boolean = false,
     val playbackState: Int = Player.STATE_IDLE,
-    val errorName: String? = null,
+    /** いったん失敗してから、まだ音が出ていない（[ConnectionHealth]）。 */
+    val failing: Boolean = false,
 )
 
-private fun Player.toUiState() = PlayerUiState(
+private fun Player.toUiState(previous: PlayerUiState) = PlayerUiState(
     playWhenReady = playWhenReady,
     isPlaying = isPlaying,
     playbackState = playbackState,
-    errorName = playerError?.errorCodeName,
+    failing = ConnectionHealth.failing(previous.failing, playWhenReady, isPlaying, hasError = playerError != null),
 )
 
 private fun PlayerUiState.routeState(): RouteState = when {
     isPlaying -> RouteState.Playing
-    playWhenReady && errorName != null -> RouteState.Failing
+    playWhenReady && failing -> RouteState.Failing
     playWhenReady -> RouteState.Connecting
     else -> RouteState.Idle
 }
@@ -203,10 +204,10 @@ private fun MainScreen(
 
     DisposableEffect(controller) {
         if (controller == null) return@DisposableEffect onDispose { }
-        state = controller.toUiState()
+        state = controller.toUiState(PlayerUiState())
         val listener = object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) {
-                state = player.toUiState()
+                state = player.toUiState(state)
             }
         }
         controller.addListener(listener)
@@ -403,7 +404,7 @@ private fun AddressField(value: String, error: String?, onValueChange: (String) 
 
 private fun statusText(controller: MediaController?, state: PlayerUiState): String = when {
     controller == null -> "再生サービスに繋いでいます"
-    state.playWhenReady && state.errorName != null -> "PC に繋がりません。繋ぎ直しています"
+    state.playWhenReady && state.failing -> "PC に繋がりません。繋ぎ直しています"
     state.playWhenReady && state.playbackState == Player.STATE_ENDED -> "PC が配信を終えました。繋ぎ直しています"
     state.isPlaying -> "再生中"
     state.playWhenReady -> "PC に繋いでいます"
