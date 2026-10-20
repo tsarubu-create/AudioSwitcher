@@ -1,8 +1,8 @@
 using AudioSwitcher.Core.Encoding;
 using AudioSwitcher.Server;
+using AudioSwitcher.Server.Logging;
 using AudioSwitcher.Server.Pairing;
 using AudioSwitcher.Tray.Audio;
-using AudioSwitcher.Tray.Logging;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
@@ -66,7 +66,7 @@ internal static class Program
         }
 
         logger.LogInformation("ポート {Port} で待ち受けを始めた", port);
-        using (var tray = new TrayContext(service, pairing, port, logDirectory))
+        using (var tray = new TrayContext(service, pairing, logProvider, port, logDirectory))
         {
             Application.Run(tray);
         }
