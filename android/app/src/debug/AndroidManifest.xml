@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug 版にだけ入る。端末の中の音声認識（文字起こしの C 案）を確かめるための画面。docs/構成.md の 2.5。 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        録音の許可（RECORD_AUDIO）は書かない。外から音を流し込む場合（EXTRA_AUDIO_SOURCE）は、
+        許可が無くても認識できることを実機（Android 16）で確かめた（docs/構成.md の 2.5）。
+    -->
+
+    <application>
+        <activity
+            android:name=".debug.AsrProbeActivity"
+            android:exported="true" />
+    </application>
+
+</manifest>
