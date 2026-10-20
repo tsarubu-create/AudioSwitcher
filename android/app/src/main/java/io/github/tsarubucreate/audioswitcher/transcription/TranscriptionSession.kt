@@ -32,6 +32,7 @@ class TranscriptionSession(
             val gapMs = now - samples.size * 1000L / PcmConverter.TARGET_RATE - last
             if (gapMs >= gapThresholdMs) {
                 flushSilence()
+                transcriber.boundary()
                 assembler.addMarker("（${gapMs / 1000}秒途切れ）")
             }
         }
@@ -57,6 +58,7 @@ class TranscriptionSession(
             val gapMs = monotonicMs() - last
             if (gapMs >= gapThresholdMs) {
                 flushSilence()
+                transcriber.boundary()
                 assembler.addMarker("（${gapMs / 1000}秒途切れ）")
             }
         }
@@ -77,6 +79,7 @@ class TranscriptionSession(
 
     private fun flushSilence() {
         if (silentMs >= silenceThresholdMs) {
+            transcriber.boundary()
             assembler.addMarker("（${silentMs / 1000}秒空白）")
         }
         silentMs = 0

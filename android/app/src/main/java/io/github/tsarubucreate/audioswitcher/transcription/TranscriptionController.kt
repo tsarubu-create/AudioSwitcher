@@ -60,11 +60,9 @@ class TranscriptionController(private val context: Context, private val settings
         val folder = settings.folder
         when {
             !settings.enabled -> return
-            Build.VERSION.SDK_INT < 33 -> return report("この端末（Android 12 以前）では文字起こしを使えません", problem = true)
             folder == null -> return report("保存先のフォルダを選んでください", problem = true)
         }
-
-        val transcriber = OnDeviceTranscriber(context)
+        val transcriber = createTranscriber() ?: return
         val writer = TranscriptWriter(
             output = SafTranscriptOutput(context.contentResolver, folder!!),
             wallClock = { ZonedDateTime.now() },
@@ -107,6 +105,24 @@ class TranscriptionController(private val context: Context, private val settings
     fun release() {
         stop()
         worker.shutdown()
+    }
+
+    /** 設定の方式で文字起こしを作る。B・A は、失敗が続いたら C に切り替えられるようにする。作れなければ状態を出して null。 */
+    private fun createTranscriber(): Transcriber? {
+        val onDevice: (() -> Transcriber)? = if (Build.VERSION.SDK_INT >= 33) ({ OnDeviceTranscriber(context) }) else null
+        val primary: Transcriber = when (settings.method) {
+            TranscriptionMethod.ON_DEVICE -> return onDevice?.invoke()
+                ?: null.also { report("この端末（Android 12 以前）では端末の音声認識を使えません", problem = true) }
+            TranscriptionMethod.GROQ -> GroqTranscriber(
+                settings.groqKey.load() ?: return null.also { report("Groq の API キーがまだありません（方式を変える から入れてください）", problem = true) },
+                settings.groqModel,
+            )
+            TranscriptionMethod.GEMINI -> GeminiTranscriber(
+                settings.geminiKey.load() ?: return null.also { report("Gemini の API キーがまだありません（方式を変える から入れてください）", problem = true) },
+                settings.geminiModel,
+            )
+        }
+        return SwitchableTranscriber(primary, onDevice, worker)
     }
 
     private fun report(message: String?, problem: Boolean) {

@@ -21,6 +21,11 @@ interface Transcriber {
      */
     fun feed(samples: ShortArray, isSpeech: Boolean)
 
+    /**
+     * 空白・途切れの印を書く直前に呼ぶ。区間を溜める方式（B・A）は、溜めている分をここで送り、印より前の区間として順番を守る。
+     */
+    fun boundary() = Unit
+
     fun stop()
 
     interface Listener {
@@ -31,6 +36,9 @@ interface Transcriber {
 
         /** 文字起こしを続けられないとき（方式が使えない・止まったなど）。[message] は画面に出す短い文。 */
         fun onError(message: String)
+
+        /** 失敗が続いたので、別の方式（C）に切り替えたいとき（docs/構成.md の 2.5）。[reason] は md と画面に出す短い理由。 */
+        fun onFallback(reason: String) = Unit
     }
 
     /** 書き出す順番の札。区間を受け付けたときに取り、文字になったら [fulfill] する。 */

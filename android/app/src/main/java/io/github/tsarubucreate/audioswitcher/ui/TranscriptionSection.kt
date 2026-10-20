@@ -22,7 +22,7 @@ data class TranscriptionUiState(
     val folderLabel: String? = null,
     val status: String? = null,
     val statusIsProblem: Boolean = false,
-    val method: String = "端末の音声認識",
+    val method: String = "",
 )
 
 /**
@@ -30,7 +30,12 @@ data class TranscriptionUiState(
  * 画面で目立たせるのは線だけなので、ここは細い線で区切って静かにする。
  */
 @Composable
-fun TranscriptionSection(state: TranscriptionUiState, onEnabledChange: (Boolean) -> Unit, onPickFolder: () -> Unit) {
+fun TranscriptionSection(
+    state: TranscriptionUiState,
+    onEnabledChange: (Boolean) -> Unit,
+    onPickFolder: () -> Unit,
+    onOpenMethodSettings: () -> Unit,
+) {
     val colors = LocalAppColors.current
 
     Spacer(Modifier.height(32.dp))
@@ -67,4 +72,7 @@ fun TranscriptionSection(state: TranscriptionUiState, onEnabledChange: (Boolean)
         Text(it, style = MaterialTheme.typography.bodySmall, color = if (state.statusIsProblem) colors.alert else colors.ink)
     }
     Text("方式: ${state.method}", style = MaterialTheme.typography.bodySmall, color = colors.graphite)
+    TextButton(onClick = onOpenMethodSettings) {
+        Text("方式を変える", style = MaterialTheme.typography.bodySmall, color = colors.signal)
+    }
 }

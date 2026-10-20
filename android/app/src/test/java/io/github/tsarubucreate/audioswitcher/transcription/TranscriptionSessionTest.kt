@@ -69,6 +69,18 @@ class TranscriptionSessionTest {
     }
 
     @Test
+    fun 空白と途切れの印を書く前に_方式へ区切りを知らせる() {
+        deliver(speechMs = 1_000)
+        deliver(silenceMs = 6_000)
+        deliver(speechMs = 1_000)
+        now += 7_000
+        deliver(speechMs = 1_000)
+
+        assertEquals(listOf("（6秒空白）", "（7秒途切れ）"), written)
+        assertEquals(2, transcriber.boundaries)
+    }
+
+    @Test
     fun 届いた音はすべて文字起こしへ渡し_声の有無を添える() {
         deliver(silenceMs = 100)
         deliver(speechMs = 100)
@@ -87,12 +99,16 @@ class TranscriptionSessionTest {
 
     private class RecordingTranscriber : Transcriber {
         val fed = ArrayList<Pair<Int, Boolean>>()
+        var boundaries = 0
         var stopped = false
         override val method = "テスト"
         override val model = "test"
         override fun start(listener: Transcriber.Listener) = Unit
         override fun feed(samples: ShortArray, isSpeech: Boolean) {
             fed.add(samples.size to isSpeech)
+        }
+        override fun boundary() {
+            boundaries++
         }
         override fun stop() {
             stopped = true
