@@ -24,13 +24,13 @@ object HttpFailures {
     fun isValidModel(model: String): Boolean = Regex("^[A-Za-z0-9._-]+$").matches(model)
 }
 
-/** HTTP で送り、返事の本文を返す。失敗は [TranscriptionFailure] にする。 */
-private fun post(url: String, headers: Map<String, String>, body: ByteArray): String {
+/** HTTP で送り、返事の本文を返す。返事を [readTimeoutMs] まで待つ。失敗は [TranscriptionFailure] にする。 */
+private fun post(url: String, headers: Map<String, String>, body: ByteArray, readTimeoutMs: Int = 60_000): String {
     val connection = URL(url).openConnection() as HttpURLConnection
     try {
         connection.requestMethod = "POST"
         connection.connectTimeout = 10_000
-        connection.readTimeout = 60_000
+        connection.readTimeout = readTimeoutMs
         connection.doOutput = true
         headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
         connection.outputStream.use { it.write(body) }
@@ -115,6 +115,7 @@ class GeminiTranscriber(private val apiKey: String, override val model: String) 
             "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent",
             mapOf("x-goog-api-key" to apiKey, "Content-Type" to "application/json"),
             request.toString().toByteArray(),
+            READ_TIMEOUT_MS,
         )
         return try {
             val candidates = JSONObject(response).optJSONArray("candidates") ?: return ""
@@ -127,6 +128,9 @@ class GeminiTranscriber(private val apiKey: String, override val model: String) 
 
     companion object {
         const val DEFAULT_MODEL = "gemini-3.8-flash"
+
+        /** Gemini は音声が長いほど返事が遅く、60 秒の区間で 60 秒を超えたので、180 秒まで待つ（docs/構成.md の 2.5）。 */
+        private const val READ_TIMEOUT_MS = 180_000
 
         /** 話し言葉だけを書かせる指示（docs/構成.md の 2.5: 効果音・衝撃音・BGM は書かない）。 */
         private const val PROMPT =
