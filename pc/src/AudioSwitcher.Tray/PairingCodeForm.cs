@@ -5,9 +5,11 @@ internal sealed class PairingCodeForm : Form
 {
     private readonly Label _code;
 
-    public PairingCodeForm()
+    /// <param name="icon">窓とタスクバーのボタンのアイコン。持ち主は呼び出し側で、この窓は片付けない。</param>
+    public PairingCodeForm(Icon icon)
     {
         Text = "AudioSwitcher - ペアリング";
+        Icon = icon;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;

@@ -14,8 +14,10 @@ internal sealed class TrayContext : ApplicationContext
     private readonly PairingService _pairing;
     private readonly FileLoggerProvider _log;
     private readonly NotifyIcon _icon;
-    private readonly Icon _streamingIcon = LoadIcon("app");
-    private readonly Icon _idleIcon = LoadIcon("idle");
+    private readonly Icon _streamingIcon = LoadIcon("app", SystemInformation.SmallIconSize);
+    private readonly Icon _idleIcon = LoadIcon("idle", SystemInformation.SmallIconSize);
+    // ペアリングの窓用。タスクバーのボタンは大きい寸法の絵を使うので、別に読む。
+    private readonly Icon _windowIcon = LoadIcon("app", SystemInformation.IconSize);
     private readonly ToolStripMenuItem _status;
     private readonly ToolStripMenuItem _pairingStatus;
     private readonly ToolStripMenuItem _unpair;
@@ -85,6 +87,7 @@ internal sealed class TrayContext : ApplicationContext
         _icon.Dispose();
         _streamingIcon.Dispose();
         _idleIcon.Dispose();
+        _windowIcon.Dispose();
         base.ExitThreadCore();
     }
 
@@ -114,7 +117,7 @@ internal sealed class TrayContext : ApplicationContext
             return;
         }
 
-        _codeForm ??= new PairingCodeForm();
+        _codeForm ??= new PairingCodeForm(_windowIcon);
         _codeForm.ShowCode(code);
     }
 
@@ -151,12 +154,12 @@ internal sealed class TrayContext : ApplicationContext
         _icon.Icon = streaming ? _streamingIcon : _idleIcon;
     }
 
-    /// <summary>埋め込んだ .ico から、トレイの寸法（拡大率に応じて 16〜24px）に合う絵を取り出す。</summary>
-    private static Icon LoadIcon(string name)
+    /// <summary>埋め込んだ .ico から、指定の寸法（拡大率に応じて変わる）に合う絵を取り出す。</summary>
+    private static Icon LoadIcon(string name, Size size)
     {
         using var stream = typeof(TrayContext).Assembly.GetManifestResourceStream($"AudioSwitcher.Icons.{name}.ico")
             ?? throw new InvalidOperationException($"アイコン {name}.ico が埋め込まれていない。");
-        return new Icon(stream, SystemInformation.SmallIconSize);
+        return new Icon(stream, size);
     }
 
     /// <summary>この PC の、同じ Wi-Fi から届きそうな IPv4 のアドレスごとの「IP:ポート」。</summary>
