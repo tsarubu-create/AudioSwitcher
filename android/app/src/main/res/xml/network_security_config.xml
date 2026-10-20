@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <!--
+        PC の配信は暗号化しない HTTP。PC の IP は変わりうるので、名前を絞らずに許す
+        （自分用として受け入れる。docs/構成.md の 2.2）。
+    -->
+    <base-config
+        cleartextTrafficPermitted="true"
+        tools:ignore="InsecureBaseConfiguration" />
+</network-security-config>
