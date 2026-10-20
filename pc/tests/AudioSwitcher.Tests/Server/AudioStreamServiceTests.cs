@@ -74,6 +74,22 @@ public class AudioStreamServiceTests
         Assert.Equal(1, source.StopCount);
     }
 
+    [Fact]
+    public async Task PCのアプリが終わり始めたら_すぐに止める()
+    {
+        var source = new ManualAudioSource();
+        var service = CreateService(source, new FakeTimeProvider());
+        using var stopping = new CancellationTokenSource();
+
+        var stream = service.StreamAsync(new MemoryStream(), CancellationToken.None, stopping.Token);
+        await Eventually.WaitUntilAsync(() => source.StartCount == 1, "音を取り始める");
+        stopping.Cancel();
+        var reason = await stream.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(StreamEndReason.ServerStopping, reason);
+        Assert.Equal(1, source.StopCount);
+    }
+
     private static AudioStreamService CreateService(ManualAudioSource source, TimeProvider time) =>
         new(() => source, new OggOpusEncoderFactory(() => 1), time, NullLogger<AudioStreamService>.Instance);
 

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace AudioSwitcher.Server;
@@ -33,7 +34,12 @@ public static class StreamServer
         return endpoints;
     }
 
-    private static async Task HandleStreamAsync(HttpContext context, AudioStreamService service, PairingService pairing, ILoggerFactory loggerFactory)
+    private static async Task HandleStreamAsync(
+        HttpContext context,
+        AudioStreamService service,
+        PairingService pairing,
+        IHostApplicationLifetime lifetime,
+        ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger(typeof(StreamServer));
         var remote = context.Connection.RemoteIpAddress;
@@ -61,7 +67,7 @@ public static class StreamServer
             context.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
             await context.Response.StartAsync(context.RequestAborted);
 
-            var reason = await service.StreamAsync(context.Response.Body, context.RequestAborted);
+            var reason = await service.StreamAsync(context.Response.Body, context.RequestAborted, lifetime.ApplicationStopping);
             logger.LogInformation("{Remote} へのストリームを終えた（{Reason}）", remote, reason);
             if (reason != StreamEndReason.ClientDisconnected)
             {

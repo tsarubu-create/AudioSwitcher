@@ -16,6 +16,9 @@ public enum StreamEndReason
 
     /// <summary>音を取り続けられなくなった。</summary>
     SourceFaulted,
+
+    /// <summary>PC 側のアプリが終わり始めた。</summary>
+    ServerStopping,
 }
 
 /// <summary>
@@ -80,7 +83,11 @@ public sealed class AudioStreamService
     /// <summary>
     /// <paramref name="output"/> へ流し続け、終わった理由を返す。<see cref="TryAcquire"/> で権利を取ってから呼ぶ。
     /// </summary>
-    public async Task<StreamEndReason> StreamAsync(Stream output, CancellationToken cancellationToken)
+    /// <param name="serverStopping">
+    /// PC 側のアプリが終わり始めた合図。終わりの無いストリームは自分では終わらないので、この合図ですぐに止める
+    /// （待たずに止めないと、ASP.NET Core が処理中の要求の終わりを最大 30 秒待ち、その間も流し続けてしまう）。
+    /// </param>
+    public async Task<StreamEndReason> StreamAsync(Stream output, CancellationToken cancellationToken, CancellationToken serverStopping = default)
     {
         var ring = new SampleRingBuffer(StreamFormat.SampleCountOf(BufferCapacity));
         var encoder = _encoderFactory.Create();
@@ -88,7 +95,7 @@ public sealed class AudioStreamService
         var pacer = new FramePacer(ring, _time);
 
         using var source = _sourceFactory();
-        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, serverStopping);
         Exception? fault = null;
         source.SamplesAvailable += samples => ring.Write(samples);
         source.Faulted += ex =>
@@ -121,6 +128,11 @@ public sealed class AudioStreamService
         {
             _logger.LogError(fault, "音を取り続けられなくなったため、ストリームを終える");
             return StreamEndReason.SourceFaulted;
+        }
+        catch (OperationCanceledException) when (serverStopping.IsCancellationRequested)
+        {
+            _logger.LogInformation("PC 側のアプリが終わり始めたので、ストリームを止める");
+            return StreamEndReason.ServerStopping;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
