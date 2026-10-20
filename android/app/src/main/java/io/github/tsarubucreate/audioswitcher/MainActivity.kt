@@ -116,6 +116,7 @@ class MainActivity : ComponentActivity() {
                     initialAddress = prefs.getString(KEY_ADDRESS, "") ?: "",
                     onAddressSaved = { prefs.edit { putString(KEY_ADDRESS, it) } },
                     onPaired = { keyStorage.save(it) },
+                    onNoticeDone = { keyStorage.clearNotice() },
                 )
             }
         }
@@ -197,6 +198,7 @@ private fun MainScreen(
     initialAddress: String,
     onAddressSaved: (String) -> Unit,
     onPaired: (String) -> Unit,
+    onNoticeDone: () -> Unit,
 ) {
     val colors = LocalAppColors.current
     var address by remember { mutableStateOf(initialAddress) }
@@ -239,6 +241,7 @@ private fun MainScreen(
             } else {
                 PairingContent(
                     notice = notice,
+                    onNoticeDone = onNoticeDone,
                     address = address,
                     onAddressChange = { address = it },
                     onPaired = {
@@ -415,7 +418,13 @@ private const val ADDRESS_HINT = "「192.168.1.5:48100」の形で入れてく�
 
 /** ペアリングの画面: 知らせ、接続先、ペアリング。 */
 @Composable
-private fun PairingContent(notice: String?, address: String, onAddressChange: (String) -> Unit, onPaired: (String) -> Unit) {
+private fun PairingContent(
+    notice: String?,
+    onNoticeDone: () -> Unit,
+    address: String,
+    onAddressChange: (String) -> Unit,
+    onPaired: (String) -> Unit,
+) {
     val colors = LocalAppColors.current
     var addressError by remember { mutableStateOf<String?>(null) }
 
@@ -428,7 +437,9 @@ private fun PairingContent(notice: String?, address: String, onAddressChange: (S
         addressError = null
     }
     Spacer(Modifier.height(24.dp))
-    PairingSection(address = address, onInvalidAddress = { addressError = it }, onPaired = onPaired)
+    // 「ペアリングを始める」を押したら、「解除されました」の知らせは役目を終えたので消す
+    // （赤い知らせが2つ並ばないように。docs/画面.md）。
+    PairingSection(address = address, onInvalidAddress = { addressError = it }, onBegin = onNoticeDone, onPaired = onPaired)
 }
 
 /** ペアリングの進み具合。 */
@@ -442,7 +453,7 @@ private sealed interface PairingPhase {
 
 /** PC に出ている2桁の数字と同じものを、5つの候補から選ぶ（docs/構成.md の 2.3）。 */
 @Composable
-private fun PairingSection(address: String, onInvalidAddress: (String) -> Unit, onPaired: (String) -> Unit) {
+private fun PairingSection(address: String, onInvalidAddress: (String) -> Unit, onBegin: () -> Unit, onPaired: (String) -> Unit) {
     val colors = LocalAppColors.current
     var phase by remember { mutableStateOf<PairingPhase>(PairingPhase.Idle) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -459,6 +470,7 @@ private fun PairingSection(address: String, onInvalidAddress: (String) -> Unit, 
     fun begin() {
         val baseUrl = StreamAddress.toBaseUrl(address) ?: return onInvalidAddress(ADDRESS_HINT)
         focusManager.clearFocus()
+        onBegin()
         phase = PairingPhase.Working
         say(null)
         scope.launch {
