@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Debug 版は Release 版と並べて入れるので、名前で見分けられるようにする。 -->
+    <string name="app_name">AudioSwitcher Debug</string>
+</resources>

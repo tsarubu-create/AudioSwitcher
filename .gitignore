@@ -5,6 +5,7 @@
 *.keystore
 *.jks
 local.properties
+keystore.properties
 
 # --- PC 側（.NET / Visual Studio） ---
 [Bb]in/

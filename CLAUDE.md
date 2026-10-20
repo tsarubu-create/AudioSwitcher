@@ -21,7 +21,7 @@ PR を作ったら、変更した側の試用の形を用意してから報告�
 
 - **置き場所**: ローカルの `artifacts/`（git に入れない）に置き、パスを PR の本文に書く。
 - **PC 側**: `dotnet publish` で作った exe を zip にまとめる。
-- **Android 側**: デバッグ APK（`assembleDebug`）。
+- **Android 側**: 署名した Release 版の APK（`assembleRelease`。署名の鍵の用意は [docs/開発環境.md](docs/開発環境.md)）。run-as で中を触る確かめが要るときだけ、デバッグ APK（`assembleDebug`）も添える。
 - 試し方（起動 → Android で接続先を入れてペアリング → 再生 → 画面を消して聴き続けられるか）を PR の本文に書く。
 
 ## 全体ルールを緩めるところ
