@@ -1,0 +1,37 @@
+# --- 秘密（合言葉・鍵など） ---
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+local.properties
+
+# --- PC 側（.NET / Visual Studio） ---
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+*.rsuser
+[Tt]est[Rr]esults/
+*.nupkg
+publish/
+
+# --- Android 側（Gradle / Android Studio） ---
+.gradle/
+build/
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# --- 試用の配布物 ---
+artifacts/
+*.zip
+
+# --- OS ---
+Thumbs.db
+.DS_Store
