@@ -57,6 +57,45 @@ class ChunkedTranscriberTest {
     }
 
     @Test
+    fun 無料枠の上限では示された待ち時間だけ待ち_長すぎれば諦める() {
+        val transcriber = FakeTranscriber(
+            listOf(
+                Result.failure(HttpFailures.of(429, "7")),
+                Result.failure(HttpFailures.of(429)),
+                Result.success("届いた。"),
+                Result.failure(HttpFailures.of(429, "3600")),
+            ),
+        )
+        transcriber.start(listener)
+
+        transcriber.feed(speech(2_000), isSpeech = true)
+        transcriber.boundary()
+        transcriber.feed(speech(1_000), isSpeech = true)
+        transcriber.boundary()
+
+        assertEquals(listOf("届いた。", "（1秒文字起こし失敗：無料枠の上限（429））"), written)
+        assertEquals(listOf(7_000L, 30_000L), sleeps) // 示されなければ 30 秒。1時間は待たない
+        assertEquals(4, transcriber.calls)
+    }
+
+    @Test
+    fun 止めても送る役は閉じず_次の回もそのまま送れる() {
+        val sender = DirectExecutor()
+        val first = FakeTranscriber(listOf(Result.success("一回目。")), sender)
+        first.start(listener)
+        first.feed(speech(2_000), isSpeech = true)
+        first.stop()
+
+        val second = FakeTranscriber(listOf(Result.success("二回目。")), sender)
+        second.start(listener)
+        second.feed(speech(2_000), isSpeech = true)
+        second.stop()
+
+        assertEquals(listOf("一回目。", "二回目。"), written)
+        assertTrue(!sender.isShutdown)
+    }
+
+    @Test
     fun 送り直しても駄目なら失敗の印を書いて次へ進む() {
         val transcriber = FakeTranscriber(List(3) { Result.failure<String>(TranscriptionFailure("無料枠の上限（429）", retryable = true)) } + Result.success("次。"))
         transcriber.start(listener)
@@ -159,7 +198,7 @@ class ChunkedTranscriberTest {
 
         assertEquals(
             listOf(
-                "偽の方式: 2秒の区間、1回目で失敗（1500ms、時間切れ）。送り直す",
+                "偽の方式: 2秒の区間、1回目で失敗（1500ms、時間切れ）。2000ms 待って送り直す",
                 "偽の方式: 2秒の区間、2回目で成功（1500ms、1行）",
             ),
             logs,
@@ -181,8 +220,8 @@ class ChunkedTranscriberTest {
     private fun speech(ms: Long) = ShortArray((ms * 16).toInt()) { 1000 }
 
     /** 送る処理をその場で走らせ、返事は並べた順に返す。 */
-    private inner class FakeTranscriber(results: List<Result<String>>) :
-        ChunkedTranscriber(sender = DirectExecutor(), sleep = { sleeps.add(it) }, monotonicMs = { clock }, log = { logs.add(it) }) {
+    private inner class FakeTranscriber(results: List<Result<String>>, sender: Executor = DirectExecutor()) :
+        ChunkedTranscriber(sender = sender, sleep = { sleeps.add(it) }, monotonicMs = { clock }, log = { logs.add(it) }) {
         private val queue = ArrayDeque(results)
         var calls = 0
         override val method = "偽の方式"

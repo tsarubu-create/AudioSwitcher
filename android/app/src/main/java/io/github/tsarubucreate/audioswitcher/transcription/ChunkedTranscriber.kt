@@ -1,17 +1,25 @@
 package io.github.tsarubucreate.audioswitcher.transcription
 
 import android.util.Log
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import java.util.concurrent.Executor
 
-/** 区間を文字にできなかったとき。[retryable] が false なら送り直さない（API キーが認められないなど）。 */
-class TranscriptionFailure(message: String, val retryable: Boolean, cause: Throwable? = null) : Exception(message, cause)
+/**
+ * 区間を文字にできなかったとき。[retryable] が false なら送り直さない（API キーが認められないなど）。
+ * [waitMs] があれば、送り直す前にその長さだけ待つ（無料枠の上限のとき）。
+ */
+class TranscriptionFailure(
+    message: String,
+    val retryable: Boolean,
+    cause: Throwable? = null,
+    val waitMs: Long? = null,
+) : Exception(message, cause)
 
 /**
  * 区間を溜めて送る方式（B・A）に共通の部分（docs/構成.md の 2.5「B・A の区間の切り方と、失敗したとき」）。
  *
- * - 区間は [SpeechChunker] で区切り、受け付けた順に札を取って、送る用のスレッド1本で順に送る。
- * - 失敗したら間をあけて [maxRetries] 回まで送り直し、それでも駄目なら「（～秒文字起こし失敗：理由）」と書いて次へ進む。
+ * - 区間は [SpeechChunker] で区切り、受け付けた順に札を取って、送る用のスレッド1本（[sender]）で順に送る。
+ *   [sender] はアプリで1本を使い回す（前の回の残りと次の回が同時に送らないため）。止めても閉じない。
+ * - 失敗したら間をあけて [maxRetries] 回まで送り直し（無料枠の上限では示された待ち時間。[maxWaitMs] を超えたら諦める）、それでも駄目なら「（～秒文字起こし失敗：理由）」と書いて次へ進む。
  * - 続けて [fallbackAfter] 区間失敗したら、切り替えを頼む（[Transcriber.Listener.onFallback]）。
  *
  * 送り直しの待ちは差し替えられる口（[sleep]）から受け取り、テストでは待たない。
@@ -19,11 +27,12 @@ class TranscriptionFailure(message: String, val retryable: Boolean, cause: Throw
  * 時間は単調な時計（[monotonicMs]）で計る。ログに API キーや文字にした中身は入れない。
  */
 abstract class ChunkedTranscriber(
-    private val sender: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "transcription-send") },
+    private val sender: Executor,
     private val sleep: (Long) -> Unit = Thread::sleep,
     private val chunker: SpeechChunker = SpeechChunker(),
     private val maxRetries: Int = 2,
     private val fallbackAfter: Int = 3,
+    private val maxWaitMs: Long = 60_000,
     private val monotonicMs: () -> Long = { System.nanoTime() / 1_000_000 },
     private val log: (String) -> Unit = { Log.i(TAG, it) },
 ) : Transcriber {
@@ -55,9 +64,8 @@ abstract class ChunkedTranscriber(
     }
 
     override fun stop() {
+        // 受け付けた区間は、送る役が順に送り終える（送る役はアプリで1本なので、ここでは閉じない）。
         chunker.flush()?.let(::send)
-        // 受け付けた区間は送り終えてから終わる（新しくは受け付けない）。
-        sender.shutdown()
     }
 
     private fun send(chunk: ShortArray) {
@@ -82,14 +90,19 @@ abstract class ChunkedTranscriber(
                     // 思わぬ失敗でも札は必ず埋める（埋めないと、後の行がいつまでも書き出されない）。送り直しはしない。
                     TranscriptionFailure("想定外の失敗（${e.javaClass.simpleName}）", retryable = false, cause = e)
                 }
-                val again = failure.retryable && attempt < maxRetries
+                val wait = failure.waitMs ?: (RETRY_BASE_DELAY_MS shl attempt)
+                val again = failure.retryable && attempt < maxRetries && wait <= maxWaitMs
                 log(
                     "$method: ${seconds}秒の区間、${attempt + 1}回目で失敗（${monotonicMs() - sentAt}ms、${failure.message}）" +
-                        if (again) "。送り直す" else "。諦める",
+                        when {
+                            again -> "。${wait}ms 待って送り直す"
+                            failure.retryable && wait > maxWaitMs -> "。待ち時間（${wait}ms）が長すぎるので諦める"
+                            else -> "。諦める"
+                        },
                 )
                 if (!again) break
                 attempt++
-                sleep(RETRY_BASE_DELAY_MS shl (attempt - 1))
+                sleep(wait)
             }
 
             ticket.fulfill(listOf("（${seconds}秒文字起こし失敗：${failure?.message}）"))

@@ -48,6 +48,16 @@ class TranscriptWriter(
         data class Failing(val reason: String) : Status
     }
 
+    private var finished = false
+
+    /**
+     * 回が終わった（停止した）とき。このあとに届いた行は、区切りの時刻を過ぎていても今のファイルに書く
+     * （送り終えるのを待つ間に、行の少ない次のファイルを作らないため）。
+     */
+    fun finish() {
+        finished = true
+    }
+
     /** 1行を書く（[line] に改行は含めない）。 */
     fun writeLine(line: String) {
         pending.addLast(line)
@@ -60,7 +70,7 @@ class TranscriptWriter(
 
     private fun flush() {
         try {
-            if (handle == null || monotonicMs() - partStartedAt >= partLengthMs) openNextPart(firstPart = handle == null)
+            if (handle == null || (!finished && monotonicMs() - partStartedAt >= partLengthMs)) openNextPart(firstPart = handle == null)
             if (droppedLines > 0) {
                 output.append(handle!!, "（書けずに捨てた行が ${droppedLines} 行あります）\n")
                 droppedLines = 0

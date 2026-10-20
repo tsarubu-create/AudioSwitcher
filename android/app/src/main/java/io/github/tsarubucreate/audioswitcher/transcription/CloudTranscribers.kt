@@ -4,18 +4,27 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Base64
+import java.util.concurrent.Executor
 import org.json.JSONException
 import org.json.JSONObject
 
 /** HTTP の失敗を、送り直すかどうかと短い理由に振り分ける。理由に API キーや送った中身は入れない。 */
 object HttpFailures {
-    fun of(code: Int): TranscriptionFailure = when (code) {
+    /** 無料枠の上限で、サーバが待ち時間を示さなかったときに待つ長さ。 */
+    const val DEFAULT_RATE_LIMIT_WAIT_MS = 30_000L
+
+    /** [retryAfter] は `Retry-After` ヘッダの値（秒の整数のときだけ使う）。 */
+    fun of(code: Int, retryAfter: String? = null): TranscriptionFailure = when (code) {
         401, 403 -> TranscriptionFailure("API キーが認められない（$code）", retryable = false)
         404 -> TranscriptionFailure("モデルの名前が見つからない（$code）", retryable = false)
         400 -> TranscriptionFailure("送った音声を受け付けなかった（$code）", retryable = false)
         413 -> TranscriptionFailure("音声が大きすぎる（$code）", retryable = false)
         408 -> TranscriptionFailure("時間切れ（$code）", retryable = true)
-        429 -> TranscriptionFailure("無料枠の上限（$code）", retryable = true)
+        429 -> TranscriptionFailure(
+            "無料枠の上限（$code）",
+            retryable = true,
+            waitMs = retryAfter?.trim()?.toLongOrNull()?.takeIf { it >= 0 }?.times(1000) ?: DEFAULT_RATE_LIMIT_WAIT_MS,
+        )
         in 500..599 -> TranscriptionFailure("サーバの失敗（$code）", retryable = true)
         else -> TranscriptionFailure("失敗（$code）", retryable = false)
     }
@@ -35,7 +44,7 @@ private fun post(url: String, headers: Map<String, String>, body: ByteArray, rea
         headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
         connection.outputStream.use { it.write(body) }
         val code = connection.responseCode
-        if (code !in 200..299) throw HttpFailures.of(code)
+        if (code !in 200..299) throw HttpFailures.of(code, connection.getHeaderField("Retry-After"))
         return connection.inputStream.bufferedReader().use { it.readText() }
     } catch (e: IOException) {
         throw TranscriptionFailure("通信の失敗（${e.javaClass.simpleName}）", retryable = true, cause = e)
@@ -48,7 +57,7 @@ private fun post(url: String, headers: Map<String, String>, body: ByteArray, rea
  * B: Groq の Whisper（docs/構成.md の 2.5）。区間の WAV を送り、日本語の文字を受け取る。
  * API キーは `Authorization` ヘッダで渡す。
  */
-class GroqTranscriber(private val apiKey: String, override val model: String) : ChunkedTranscriber() {
+class GroqTranscriber(private val apiKey: String, override val model: String, sender: Executor) : ChunkedTranscriber(sender) {
     override val method = "Groq Whisper"
 
     override fun transcribe(wav: ByteArray): String {
@@ -91,7 +100,7 @@ class GroqTranscriber(private val apiKey: String, override val model: String) : 
  * A: Gemini（docs/構成.md の 2.5）。区間の WAV を `inline_data` で送り、話し言葉だけを日本語で書かせる。
  * API キーは URL ではなく `x-goog-api-key` ヘッダで渡す（URL は記録に残りやすいため）。
  */
-class GeminiTranscriber(private val apiKey: String, override val model: String) : ChunkedTranscriber() {
+class GeminiTranscriber(private val apiKey: String, override val model: String, sender: Executor) : ChunkedTranscriber(sender) {
     override val method = "Gemini"
 
     override fun transcribe(wav: ByteArray): String {
