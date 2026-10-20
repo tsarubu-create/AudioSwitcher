@@ -17,7 +17,8 @@ interface TranscriptOutput {
 /**
  * 文字起こしの md を書く（docs/構成.md の 2.5）。
  *
- * - ファイル名は記録を始めた日時（例: `2026-10-20 2045.md`）。[partLengthMs] ごとに次のファイル（`… (2).md`）へ移る。
+ * - ファイル名は記録を始めた日時（例: `2026-10-20 2045.md`）。作った時点（「再生」を押した時点）の日時を使う
+ *   （最初の行を書く時点ではない。B・A は最初の行が遅れて届くため）。[partLengthMs] ごとに次のファイル（`… (2).md`）へ移る。
  * - 各ファイルの先頭に Obsidian のプロパティ（開始・何本目・方式・モデル）を書く。
  * - 書けなかった行は捨てずに溜め、次に書けたときに書き出す（溜めるのは [maxPendingLines] 行まで）。
  *
@@ -33,9 +34,11 @@ class TranscriptWriter(
     private val maxPendingLines: Int = 5_000,
     private val onStatus: (Status) -> Unit = {},
 ) {
-    private var baseName: String? = null
+    private val startedAt: ZonedDateTime = wallClock()
+    private val startedAtMs: Long = monotonicMs()
+    private val baseName: String = FILE_NAME.format(startedAt)
     private var part = 0
-    private var partStartedAt = 0L
+    private var partStartedAt = startedAtMs
     private var handle: String? = null
     private val pending = ArrayDeque<String>()
     private var droppedLines = 0
@@ -57,7 +60,7 @@ class TranscriptWriter(
 
     private fun flush() {
         try {
-            if (handle == null || monotonicMs() - partStartedAt >= partLengthMs) openNextPart()
+            if (handle == null || monotonicMs() - partStartedAt >= partLengthMs) openNextPart(firstPart = handle == null)
             if (droppedLines > 0) {
                 output.append(handle!!, "（書けずに捨てた行が ${droppedLines} 行あります）\n")
                 droppedLines = 0
@@ -72,16 +75,16 @@ class TranscriptWriter(
         }
     }
 
-    private fun openNextPart() {
-        val now = wallClock()
-        val base = baseName ?: FILE_NAME.format(now).also { baseName = it }
+    private fun openNextPart(firstPart: Boolean) {
+        // 1本目は記録を始めた日時、2本目からは、その本の始まり（前の本から 1 時間後）の日時。
+        val partStart = if (firstPart) startedAt else wallClock()
         val nextPart = part + 1
-        val name = if (nextPart == 1) "$base.md" else "$base ($nextPart).md"
+        val name = if (nextPart == 1) "$baseName.md" else "$baseName ($nextPart).md"
         val created = output.create(name)
-        output.append(created, frontMatter(now, nextPart))
+        output.append(created, frontMatter(partStart, nextPart))
         handle = created
         part = nextPart
-        partStartedAt = monotonicMs()
+        partStartedAt = if (firstPart) startedAtMs else monotonicMs()
         onStatus(Status.Writing(name))
     }
 

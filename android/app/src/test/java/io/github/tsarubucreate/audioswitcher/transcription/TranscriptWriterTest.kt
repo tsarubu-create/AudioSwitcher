@@ -58,6 +58,17 @@ class TranscriptWriterTest {
     }
 
     @Test
+    fun ファイル名と開始は_最初の行を書いた時ではなく記録を始めた時にする() {
+        // 作った（「再生」を押した）のは 20:45。最初の行が届いたのは 1 分 40 秒後。
+        mono += 100_000
+        wall = wall.plusSeconds(100)
+        writer.writeLine("遅れて届いた行")
+
+        assertEquals(listOf("2026-10-20 2045.md"), output.files.keys.toList())
+        assertTrue(output.files.getValue("2026-10-20 2045.md").toString().contains("開始: 2026-10-20 20:45\n"))
+    }
+
+    @Test
     fun 書けなかった行は溜めておき_次に書けたときに順に書く() {
         writer.writeLine("一")
         output.failing = true

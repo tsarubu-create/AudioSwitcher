@@ -61,6 +61,9 @@ class GroqTranscriber(private val apiKey: String, override val model: String) : 
             field("language", "ja")
             field("response_format", "json")
             field("temperature", "0")
+            // Whisper は日本語で句点を付けないことが多い。句点の付いた例文を前置きにすると、その書き方に寄せて返す
+            // （「句点を付けて」という指示は効かない。docs/構成.md の 2.5）。
+            field("prompt", PUNCTUATION_PROMPT)
             write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"chunk.wav\"\r\nContent-Type: audio/wav\r\n\r\n".toByteArray())
             write(wav)
             write("\r\n--$boundary--\r\n".toByteArray())
@@ -79,6 +82,7 @@ class GroqTranscriber(private val apiKey: String, override val model: String) : 
 
     companion object {
         const val DEFAULT_MODEL = "whisper-large-v3-turbo"
+        private const val PUNCTUATION_PROMPT = "こんにちは。今日はよろしくお願いします。では、始めましょう。"
         private const val ENDPOINT = "https://api.groq.com/openai/v1/audio/transcriptions"
     }
 }
