@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- tools/icon/MakeIcons.cs が書き出す。手で直さない。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="2.75" android:scaleY="2.75" android:translateX="21" android:translateY="21">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M4.5,6h9a1.5,1.5 0 0 1 1.5,1.5v6a1.5,1.5 0 0 1 -1.5,1.5h-9a1.5,1.5 0 0 1 -1.5,-1.5v-6a1.5,1.5 0 0 1 1.5,-1.5zM7.5,14.5h3v2.5h-3zM5.25,16.5h7.5a0.75,0.75 0 0 1 0.75,0.75v0a0.75,0.75 0 0 1 -0.75,0.75h-7.5a0.75,0.75 0 0 1 -0.75,-0.75v-0a0.75,0.75 0 0 1 0.75,-0.75z" />
+        <path
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2.25"
+            android:strokeLineCap="round"
+            android:pathData="M17.41,7.627A3.75,3.75 0 0 1 17.41,13.373" />
+        <path
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2.25"
+            android:strokeLineCap="round"
+            android:pathData="M19.339,5.329A6.75,6.75 0 0 1 19.339,15.671" />
+    </group>
+</vector>

@@ -1,0 +1,7 @@
+<!-- tools/icon/MakeIcons.cs が書き出す確認用の絵。手で直さない。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="240" height="240">
+  <path fill="#1E6FD9" d="M4.5,0h15a4.5,4.5 0 0 1 4.5,4.5v15a4.5,4.5 0 0 1 -4.5,4.5h-15a4.5,4.5 0 0 1 -4.5,-4.5v-15a4.5,4.5 0 0 1 4.5,-4.5z"/>
+  <path fill="#FFFFFF" d="M4.5,6h9a1.5,1.5 0 0 1 1.5,1.5v6a1.5,1.5 0 0 1 -1.5,1.5h-9a1.5,1.5 0 0 1 -1.5,-1.5v-6a1.5,1.5 0 0 1 1.5,-1.5zM7.5,14.5h3v2.5h-3zM5.25,16.5h7.5a0.75,0.75 0 0 1 0.75,0.75v0a0.75,0.75 0 0 1 -0.75,0.75h-7.5a0.75,0.75 0 0 1 -0.75,-0.75v-0a0.75,0.75 0 0 1 0.75,-0.75z"/>
+  <path fill="none" stroke="#FFFFFF" stroke-width="2.25" stroke-linecap="round" d="M17.41,7.627A3.75,3.75 0 0 1 17.41,13.373"/>
+  <path fill="none" stroke="#FFFFFF" stroke-width="2.25" stroke-linecap="round" d="M19.339,5.329A6.75,6.75 0 0 1 19.339,15.671"/>
+</svg>

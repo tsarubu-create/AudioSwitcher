@@ -12,6 +12,7 @@
 - PC 側（C# / .NET 10）: `pc/`
 - Android 側（Kotlin / Media3）: `android/`
 - 資料: `docs/`
+- 道具（アイコンを書き出すスクリプトなど）: `tools/`
 
 ## 試用の形
 
