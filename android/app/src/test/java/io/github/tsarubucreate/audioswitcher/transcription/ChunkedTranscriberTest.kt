@@ -152,7 +152,7 @@ class ChunkedTranscriberTest {
     fun 切り替えを頼まれたら_印を書いてから代わりの方式で続ける() {
         val primary = FakeTranscriber(List(3) { Result.failure<String>(TranscriptionFailure("通信の失敗", retryable = false)) })
         val fallback = RecordingTranscriber()
-        val switchable = SwitchableTranscriber(primary, { fallback }, Executor { it.run() })
+        val switchable = SwitchableTranscriber(listOf({ primary }, { fallback }), Executor { it.run() }, monotonicMs = { clock })
         switchable.start(listener)
 
         repeat(3) {
@@ -171,7 +171,7 @@ class ChunkedTranscriberTest {
     @Test
     fun 代わりの方式が無ければ知らせだけ出して続ける() {
         val primary = FakeTranscriber(List(3) { Result.failure<String>(TranscriptionFailure("通信の失敗", retryable = false)) })
-        val switchable = SwitchableTranscriber(primary, null, Executor { it.run() })
+        val switchable = SwitchableTranscriber(listOf({ primary }), Executor { it.run() }, monotonicMs = { clock })
         switchable.start(listener)
 
         repeat(3) {
@@ -232,6 +232,63 @@ class ChunkedTranscriberTest {
             clock += 1_500 // 返事に 1.5 秒かかったことにする
             return queue.removeFirst().getOrThrow()
         }
+    }
+
+    @Test
+    fun 優先度の順に_次の方式へ_さらに次の方式へと切り替える() {
+        val fail = Result.failure<String>(TranscriptionFailure("通信の失敗", retryable = false))
+        val top = FakeTranscriber(List(3) { fail })
+        val second = FakeTranscriber(List(3) { fail })
+        val last = RecordingTranscriber()
+        val switchable = SwitchableTranscriber(listOf({ top }, { second }, { last }), Executor { it.run() }, monotonicMs = { clock })
+        switchable.start(listener)
+
+        repeat(6) {
+            switchable.feed(speech(1_000), isSpeech = true)
+            switchable.boundary()
+        }
+
+        assertEquals("端末の音声認識（偽）", switchable.method)
+        assertEquals(
+            listOf("（文字起こしを偽の方式に切り替えた：通信の失敗）", "（文字起こしを端末の音声認識（偽）に切り替えた：通信の失敗）"),
+            written.filter { it.startsWith("（文字起こしを") },
+        )
+        assertTrue(last.started)
+    }
+
+    @Test
+    fun 下の方式に替えて10分たったら_選んだ方式に戻して試す() {
+        val fail = Result.failure<String>(TranscriptionFailure("通信の失敗", retryable = false))
+        val tops = ArrayDeque(listOf(FakeTranscriber(List(3) { fail }), FakeTranscriber(listOf(Result.success("戻った。")))))
+        val fallback = RecordingTranscriber()
+        val notices = ArrayList<String>()
+        val switchable = SwitchableTranscriber(
+            listOf({ tops.removeFirst() }, { fallback }),
+            Executor { it.run() },
+            monotonicMs = { clock },
+        )
+        switchable.start(object : Transcriber.Listener by listener {
+            override fun onNotice(message: String) {
+                notices.add(message)
+            }
+        })
+        repeat(3) {
+            switchable.feed(speech(1_000), isSpeech = true)
+            switchable.boundary()
+        }
+        assertEquals("端末の音声認識（偽）", switchable.method)
+
+        clock += 10 * 60 * 1000L - 1
+        switchable.feed(speech(1_000), isSpeech = true)
+        assertEquals("端末の音声認識（偽）", switchable.method) // まだ 10 分に満たない
+
+        clock += 1
+        switchable.feed(speech(1_000), isSpeech = true)
+        switchable.boundary()
+
+        assertEquals("偽の方式", switchable.method)
+        assertEquals(listOf("（文字起こしを偽の方式に戻した）", "戻った。"), written.takeLast(2))
+        assertEquals(listOf("偽の方式に戻して試しています"), notices)
     }
 
     private class RecordingTranscriber : Transcriber {

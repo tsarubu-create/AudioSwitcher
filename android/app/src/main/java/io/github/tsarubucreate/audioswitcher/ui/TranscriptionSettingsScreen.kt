@@ -72,7 +72,14 @@ fun TranscriptionSettingsScreen(
             Text("文字起こしの方式", style = MaterialTheme.typography.titleLarge, color = colors.ink)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Groq Whisper か Gemini で失敗が続いたら、その回は端末の音声認識に切り替えて続けます。",
+                "優先度: ${TranscriptionMethod.entries.joinToString(" > ") { it.label }}",
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.ink,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "選んだ方式で失敗が続いたら、優先度の順に下の方式へ切り替えて続け、10分ごとに選んだ方式へ戻して試します。" +
+                    "${TranscriptionMethod.GEMINI.label} の API キーが無ければ、${TranscriptionMethod.GEMINI.label} は飛ばします。",
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.graphite,
             )

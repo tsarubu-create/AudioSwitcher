@@ -8,6 +8,7 @@ import androidx.core.content.edit
 import io.github.tsarubucreate.audioswitcher.SecretStore
 
 /** 文字起こしの方式（docs/構成.md の 2.5）。B を主にし、A・C にも切り替えられる。 */
+/** 文字起こしの方式。並びが優先度（B > A > C。docs/構成.md の 2.5「切り替えの順」）。 */
 enum class TranscriptionMethod(val label: String) {
     GROQ("Groq Whisper"),
     GEMINI("Gemini"),
