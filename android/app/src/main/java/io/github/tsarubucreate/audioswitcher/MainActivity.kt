@@ -1,14 +1,18 @@
 package io.github.tsarubucreate.audioswitcher
 
 import android.content.ComponentName
+import android.content.Intent
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.net.Uri
 import android.os.SystemClock
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -67,6 +71,9 @@ import io.github.tsarubucreate.audioswitcher.ui.AudioSwitcherTheme
 import io.github.tsarubucreate.audioswitcher.ui.LocalAppColors
 import io.github.tsarubucreate.audioswitcher.ui.RouteLine
 import io.github.tsarubucreate.audioswitcher.ui.RouteState
+import io.github.tsarubucreate.audioswitcher.ui.TranscriptionSection
+import io.github.tsarubucreate.audioswitcher.ui.TranscriptionUiState
+import io.github.tsarubucreate.audioswitcher.transcription.TranscriptionSettings
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -86,6 +93,18 @@ class MainActivity : ComponentActivity() {
     private var paired by mutableStateOf(false)
     private var notice by mutableStateOf<String?>(null)
     private var startedAt by mutableStateOf<Long?>(null)
+    private lateinit var transcriptionSettings: TranscriptionSettings
+    private var transcription by mutableStateOf(TranscriptionUiState())
+
+    // 再生サービスが文字起こしの状態を書いたら、画面に出し直す。
+    private val transcriptionListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> refreshTranscription() }
+
+    // 保存先のフォルダを選ぶ（Storage Access Framework）。選んだフォルダへの読み書きの許可を覚えておく。
+    private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        transcriptionSettings.folder = uri
+    }
 
     // 再生サービスが鍵を捨てたとき（PC がペアリングを解除したとき）にも、画面を切り替える。
     private val keyListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> refreshPairing() }
@@ -103,6 +122,9 @@ class MainActivity : ComponentActivity() {
         startedAt = playbackStart.startedAt()
         keyStorage.registerListener(keyListener)
         playbackStart.registerListener(startListener)
+        transcriptionSettings = TranscriptionSettings(this)
+        refreshTranscription()
+        transcriptionSettings.registerListener(transcriptionListener)
         // 端末の設定で動きを減らしていたら、線の上の点を流さない。
         val reduceMotion = Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
         setContent {
@@ -117,6 +139,12 @@ class MainActivity : ComponentActivity() {
                     onAddressSaved = { prefs.edit { putString(KEY_ADDRESS, it) } },
                     onPaired = { keyStorage.save(it) },
                     onNoticeDone = { keyStorage.clearNotice() },
+                    transcription = transcription,
+                    onTranscriptionEnabledChange = { enabled ->
+                        transcriptionSettings.enabled = enabled
+                        if (enabled && transcriptionSettings.folder == null) pickFolder.launch(VAULT_FOLDER_HINT)
+                    },
+                    onPickFolder = { pickFolder.launch(transcriptionSettings.folder ?: VAULT_FOLDER_HINT) },
                 )
             }
         }
@@ -125,7 +153,17 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         keyStorage.unregisterListener(keyListener)
         playbackStart.unregisterListener(startListener)
+        transcriptionSettings.unregisterListener(transcriptionListener)
         super.onDestroy()
+    }
+
+    private fun refreshTranscription() {
+        transcription = TranscriptionUiState(
+            enabled = transcriptionSettings.enabled,
+            folderLabel = transcriptionSettings.folder?.let(TranscriptionSettings::folderLabel),
+            status = transcriptionSettings.status,
+            statusIsProblem = transcriptionSettings.statusIsProblem,
+        )
     }
 
     private fun refreshPairing() {
@@ -162,6 +200,12 @@ class MainActivity : ComponentActivity() {
         const val TAG = "MainActivity"
         const val PREFS_NAME = "settings"
         const val KEY_ADDRESS = "address"
+
+        /** フォルダを選ぶ画面で最初に開く場所（Obsidian の Vault の中。docs/構成.md の 2.5）。 */
+        val VAULT_FOLDER_HINT: Uri = DocumentsContract.buildDocumentUri(
+            "com.android.externalstorage.documents",
+            "primary:Documents/SyncVault/30_Projects/Spaceまとめ",
+        )
     }
 }
 
@@ -199,6 +243,9 @@ private fun MainScreen(
     onAddressSaved: (String) -> Unit,
     onPaired: (String) -> Unit,
     onNoticeDone: () -> Unit,
+    transcription: TranscriptionUiState,
+    onTranscriptionEnabledChange: (Boolean) -> Unit,
+    onPickFolder: () -> Unit,
 ) {
     val colors = LocalAppColors.current
     var address by remember { mutableStateOf(initialAddress) }
@@ -238,6 +285,7 @@ private fun MainScreen(
                         onAddressSaved(it)
                     },
                 )
+                TranscriptionSection(transcription, onTranscriptionEnabledChange, onPickFolder)
             } else {
                 PairingContent(
                     notice = notice,
