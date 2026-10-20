@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AudioSwitcher.Core/AudioSwitcher.Core.csproj" />
+    <Project Path="src/AudioSwitcher.Server/AudioSwitcher.Server.csproj" />
+    <Project Path="src/AudioSwitcher.Tray/AudioSwitcher.Tray.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AudioSwitcher.Tests/AudioSwitcher.Tests.csproj" />
+  </Folder>
+</Solution>
