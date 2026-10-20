@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -38,9 +39,12 @@ class PlaybackService : MediaSessionService() {
     private val reconnect = ReconnectPolicy()
     private val retry = Runnable { retryNow() }
     private val keyStorage by lazy { KeyStorage(this) }
+    private val playbackStart by lazy { PlaybackStartStore(this) }
 
     override fun onCreate() {
         super.onCreate()
+        // 前に動いていたサービスが落ちて残った時刻は、もう意味が無いので消す。
+        playbackStart.clear()
 
         // ExoPlayer の既定は数十秒ためる。ライブの音なので 0.5〜1.5 秒に縮めて遅れを抑える。
         val loadControl = DefaultLoadControl.Builder()
@@ -95,6 +99,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         handler.removeCallbacks(retry)
+        playbackStart.clear()
         session?.run {
             player.release()
             release()
@@ -148,6 +153,13 @@ class PlaybackService : MediaSessionService() {
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // 経過時間は「再生」を押してから数え、繋ぎ直す間も数え続け、停止で消す（docs/画面.md）。
+            if (playWhenReady) {
+                playbackStart.markStarted(SystemClock.elapsedRealtime())
+            } else {
+                playbackStart.clear()
+            }
+
             if (!playWhenReady) {
                 handler.removeCallbacks(retry)
                 reconnect.reset()
