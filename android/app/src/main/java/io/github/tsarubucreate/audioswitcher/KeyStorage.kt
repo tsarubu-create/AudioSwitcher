@@ -66,6 +66,9 @@ class KeyStorage(context: Context) {
 
     fun notice(): String? = prefs.getString(KEY_NOTICE, null)
 
+    /** 知らせだけを消す（読んで次の操作に進んだとき）。 */
+    fun clearNotice() = prefs.edit { remove(KEY_NOTICE) }
+
     fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
         prefs.registerOnSharedPreferenceChangeListener(listener)
 
