@@ -8,6 +8,9 @@ import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
+import io.github.tsarubucreate.audioswitcher.BuildConfig
+import java.io.File
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.time.ZonedDateTime
@@ -69,6 +72,7 @@ class TranscriptionController(private val context: Context, private val settings
             monotonicMs = { SystemClock.elapsedRealtime() },
             method = transcriber.method,
             model = transcriber.model,
+            partLengthMs = debugPartLengthMs() ?: TranscriptWriter.PART_LENGTH_MS,
             onStatus = { status ->
                 // 停止のあとに届いた最後の行を書いたときは、状態を出し直さない。
                 if (active) when (status) {
@@ -107,6 +111,28 @@ class TranscriptionController(private val context: Context, private val settings
         worker.shutdown()
     }
 
+    /**
+     * Debug 版だけ: アプリの中の `files/debug_part_minutes` に分の数があれば、区切りをその長さにする
+     * （1時間を待たずに区切りを確かめるため。docs/構成.md の 2.5）。無い・読めないときは null（1時間のまま）。
+     */
+    private fun debugPartLengthMs(): Long? {
+        if (!BuildConfig.DEBUG) return null
+        val file = File(context.filesDir, DEBUG_PART_MINUTES_FILE)
+        if (!file.exists()) return null
+        val minutes = try {
+            file.readText().trim().toLongOrNull()
+        } catch (e: IOException) {
+            Log.w(TAG, "Debug: 区切りの長さを読めなかったので、1時間のままにする", e)
+            return null
+        }
+        if (minutes == null || minutes <= 0) {
+            Log.w(TAG, "Debug: 区切りの長さが正の整数でないので、1時間のままにする")
+            return null
+        }
+        Log.i(TAG, "Debug: 区切りを${minutes}分にする")
+        return minutes * 60_000
+    }
+
     /** 設定の方式で文字起こしを作る。B・A は、失敗が続いたら C に切り替えられるようにする。作れなければ状態を出して null。 */
     private fun createTranscriber(): Transcriber? {
         val onDevice: (() -> Transcriber)? = if (Build.VERSION.SDK_INT >= 33) ({ OnDeviceTranscriber(context) }) else null
@@ -132,6 +158,7 @@ class TranscriptionController(private val context: Context, private val settings
 
     private companion object {
         const val TAG = "Transcription"
+        const val DEBUG_PART_MINUTES_FILE = "debug_part_minutes"
 
         /** 横取りした音を 16bit の PCM にする（ExoPlayer の出口は 16bit か float）。それ以外の形は扱わない。 */
         fun toShorts(buffer: ByteBuffer, encoding: Int): ShortArray? {

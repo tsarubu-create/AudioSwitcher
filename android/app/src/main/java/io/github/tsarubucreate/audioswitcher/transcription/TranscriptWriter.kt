@@ -30,7 +30,7 @@ class TranscriptWriter(
     private val monotonicMs: () -> Long,
     private val method: String,
     private val model: String,
-    private val partLengthMs: Long = 60 * 60 * 1000L,
+    private val partLengthMs: Long = PART_LENGTH_MS,
     private val maxPendingLines: Int = 5_000,
     private val onStatus: (Status) -> Unit = {},
 ) {
@@ -97,8 +97,10 @@ class TranscriptWriter(
         append("---\n")
     }
 
-    private companion object {
-        val FILE_NAME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HHmm")
-        val PROPERTY_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+    companion object {
+        /** 1本のファイルの長さ（1時間。docs/構成.md の 2.5）。 */
+        const val PART_LENGTH_MS = 60 * 60 * 1000L
+        private val FILE_NAME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HHmm")
+        private val PROPERTY_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     }
 }
