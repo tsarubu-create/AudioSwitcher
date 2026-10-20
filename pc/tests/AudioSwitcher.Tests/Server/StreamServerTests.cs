@@ -87,6 +87,24 @@ public class StreamServerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PCのアプリを止めると_流しているストリームを待たずにすぐ終える()
+    {
+        var key = PairingServiceTests.Pair(_pairing);
+        using var response = await GetStreamAsync(key);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await Eventually.WaitUntilAsync(() => _service.IsStreaming, "流し始める");
+
+        // 直す前は、ASP.NET Core が処理中の要求の終わりを最大 30 秒待ち、その間も流し続けていた。
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        await _app.StopAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        stopwatch.Stop();
+
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5), $"止まるまで {stopwatch.Elapsed} かかった");
+        // TestServer の StopAsync は、要求の後片付け（流す権利を返す finally）を待たずに戻ることがある。
+        await Eventually.WaitUntilAsync(() => !_service.IsStreaming, "流す権利を返す", timeoutMs: 2000);
+    }
+
+    [Fact]
     public async Task 鍵が無いか認めない鍵なら401で断り_音を取り始めない()
     {
         PairingServiceTests.Pair(_pairing);
