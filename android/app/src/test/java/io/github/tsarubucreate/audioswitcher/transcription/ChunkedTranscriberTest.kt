@@ -166,6 +166,18 @@ class ChunkedTranscriberTest {
         )
     }
 
+    @Test
+    fun 声の少ない区間を捨てたらログに残す() {
+        val transcriber = FakeTranscriber(emptyList())
+        transcriber.start(listener)
+
+        transcriber.feed(speech(300), isSpeech = true)
+        transcriber.stop()
+
+        assertEquals(0, transcriber.calls)
+        assertEquals(listOf("偽の方式: 300msの区間を送らずに捨てた（声は300ms）"), logs)
+    }
+
     private fun speech(ms: Long) = ShortArray((ms * 16).toInt()) { 1000 }
 
     /** 送る処理をその場で走らせ、返事は並べた順に返す。 */

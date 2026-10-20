@@ -39,10 +39,13 @@ class ChunkingTest {
 
     @Test
     fun 声が合わせて0_5秒に満たない区間は送らずに捨てる() {
+        val discarded = ArrayList<Pair<Long, Long>>()
+        chunker.onDiscard = { lengthMs, speechMs -> discarded.add(lengthMs to speechMs) }
         feed(speechMs = 400) // 一時停止の雑音のような短い音
         feed(silenceMs = 300)
 
         assertNull(chunker.flush())
+        assertEquals(listOf(700L to 400L), discarded)
         // 捨てたあとは、次の区間を新しく始める（捨てた区間の音は混ぜない）。
         feed(speechMs = 600)
         assertEquals(600, ms(chunker.flush()!!))

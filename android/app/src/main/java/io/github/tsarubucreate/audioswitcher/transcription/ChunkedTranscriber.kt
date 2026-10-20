@@ -33,6 +33,12 @@ abstract class ChunkedTranscriber(
 
     @Volatile private var fallbackRequested = false
 
+    init {
+        chunker.onDiscard = { lengthMs, speechMs ->
+            log("$method: ${lengthMs}msの区間を送らずに捨てた（声は${speechMs}ms）")
+        }
+    }
+
     /** 区間の WAV を文字にする。失敗したら [TranscriptionFailure] を投げる。送る用のスレッドで呼ばれる。 */
     protected abstract fun transcribe(wav: ByteArray): String
 

@@ -25,6 +25,9 @@ class SpeechChunker(
     private var trailingPauseMs = 0L
     private var speechMs = 0L
 
+    /** 区間を捨てたときに呼ぶ（区間の長さと、その中の声の長さ。ともにミリ秒）。ログに残すため。 */
+    var onDiscard: ((lengthMs: Long, speechMs: Long) -> Unit)? = null
+
     /** 塊を足す。区切れたら区間の音を返す（区切れなければ null）。 */
     fun add(samples: ShortArray, isSpeech: Boolean): ShortArray? {
         if (bufferedSamples == 0 && !isSpeech) {
@@ -48,9 +51,11 @@ class SpeechChunker(
 
     /** 区切る。声が [minSpeechMs] に満たなければ捨てて null。 */
     private fun take(): ShortArray? {
-        val enoughSpeech = speechMs >= minSpeechMs
+        val speech = speechMs
         val out = drain()
-        return if (enoughSpeech) out else null
+        if (speech >= minSpeechMs) return out
+        onDiscard?.invoke(toMs(out.size), speech)
+        return null
     }
 
     private fun drain(): ShortArray {
