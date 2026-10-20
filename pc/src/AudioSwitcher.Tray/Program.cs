@@ -1,5 +1,6 @@
 using AudioSwitcher.Core.Encoding;
 using AudioSwitcher.Server;
+using AudioSwitcher.Server.Pairing;
 using AudioSwitcher.Tray.Audio;
 using AudioSwitcher.Tray.Logging;
 using Microsoft.AspNetCore.Builder;
@@ -18,8 +19,9 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
-        var logDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AudioSwitcher", "logs");
+        var dataDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AudioSwitcher");
+        var logDirectory = Path.Combine(dataDirectory, "logs");
         var logProvider = new FileLoggerProvider(logDirectory, TimeProvider.System);
         using var loggerFactory = LoggerFactory.Create(b => b.AddProvider(logProvider));
         var logger = loggerFactory.CreateLogger(typeof(Program));
@@ -35,7 +37,13 @@ internal static class Program
             TimeProvider.System,
             loggerFactory.CreateLogger<AudioStreamService>());
 
-        var app = StreamServer.Build(service, builder =>
+        using var pairing = new PairingService(
+            new FilePairingStore(Path.Combine(dataDirectory, "pairing.json"), loggerFactory.CreateLogger<FilePairingStore>()),
+            new CryptoRandomSource(),
+            TimeProvider.System,
+            loggerFactory.CreateLogger<PairingService>());
+
+        var app = StreamServer.Build(service, pairing, builder =>
         {
             builder.WebHost.ConfigureKestrel(k => k.ListenAnyIP(port));
             builder.Logging.ClearProviders();
@@ -58,7 +66,7 @@ internal static class Program
         }
 
         logger.LogInformation("ポート {Port} で待ち受けを始めた", port);
-        using (var tray = new TrayContext(service, port, logDirectory))
+        using (var tray = new TrayContext(service, pairing, port, logDirectory))
         {
             Application.Run(tray);
         }
