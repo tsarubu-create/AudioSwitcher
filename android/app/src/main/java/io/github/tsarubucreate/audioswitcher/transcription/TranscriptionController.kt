@@ -25,10 +25,14 @@ import java.util.concurrent.Executors
 @OptIn(UnstableApi::class)
 class TranscriptionController(private val context: Context, private val settings: TranscriptionSettings) {
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "transcription") }
+
+    // 区間を送る役（B・A）。回をまたいで1本を使い回し、前の回の残りを送り終えてから次の回を送る（docs/構成.md の 2.5）。
+    private val sender = Executors.newSingleThreadExecutor { Thread(it, "transcription-send") }
     private val converter = PcmConverter()
 
     // 作業スレッドだけで触る。
     private var session: TranscriptionSession? = null
+    private var writer: TranscriptWriter? = null
 
     @Volatile private var active = false
 
@@ -88,7 +92,10 @@ class TranscriptionController(private val context: Context, private val settings
             override fun onError(message: String) = report(message, problem = true)
         })
         val created = TranscriptionSession(transcriber, assembler, monotonicMs = { SystemClock.elapsedRealtime() })
-        worker.execute { session = created }
+        worker.execute {
+            session = created
+            this.writer = writer
+        }
         active = true
         report("文字起こし中（まだ書いていない）", problem = false)
         Log.i(TAG, "文字起こしを始めた（${transcriber.method}）")
@@ -101,6 +108,8 @@ class TranscriptionController(private val context: Context, private val settings
         worker.execute {
             session?.finish()
             session = null
+            writer?.finish()
+            writer = null
         }
         report(null, problem = false)
         Log.i(TAG, "文字起こしを止めた")
@@ -109,6 +118,7 @@ class TranscriptionController(private val context: Context, private val settings
     fun release() {
         stop()
         worker.shutdown()
+        sender.shutdown()
     }
 
     /**
@@ -142,10 +152,12 @@ class TranscriptionController(private val context: Context, private val settings
             TranscriptionMethod.GROQ -> GroqTranscriber(
                 settings.groqKey.load() ?: return null.also { report("Groq の API キーがまだありません（方式を変える から入れてください）", problem = true) },
                 settings.groqModel,
+                sender,
             )
             TranscriptionMethod.GEMINI -> GeminiTranscriber(
                 settings.geminiKey.load() ?: return null.also { report("Gemini の API キーがまだありません（方式を変える から入れてください）", problem = true) },
                 settings.geminiModel,
+                sender,
             )
         }
         return SwitchableTranscriber(primary, onDevice, worker)

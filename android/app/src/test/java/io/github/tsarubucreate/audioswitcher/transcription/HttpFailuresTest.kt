@@ -26,6 +26,14 @@ class HttpFailuresTest {
     }
 
     @Test
+    fun 無料枠の上限ではRetry_Afterの秒数を待ち時間にし_無ければ30秒() {
+        assertEquals(12_000L, HttpFailures.of(429, "12").waitMs)
+        assertEquals(30_000L, HttpFailures.of(429).waitMs)
+        assertEquals(30_000L, HttpFailures.of(429, "Wed, 21 Oct 2026 07:28:00 GMT").waitMs) // 日時の形は使わない
+        assertEquals(null, HttpFailures.of(503, "12").waitMs)
+    }
+
+    @Test
     fun モデルの名前は英数字と記号3つだけを受け付ける() {
         assertTrue(HttpFailures.isValidModel("gemini-3.8-flash"))
         assertTrue(HttpFailures.isValidModel("whisper-large-v3-turbo"))
