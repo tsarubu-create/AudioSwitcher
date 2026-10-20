@@ -49,7 +49,11 @@ public class StreamServerTests : IAsyncLifetime
         var decoded = AudioAnalysis.DecodeLeft(received.Skip(2).SelectMany(p => p.Packets));
         var steady = decoded.AsSpan(StreamFormat.SampleRate / 5);
 
-        Assert.InRange(AudioAnalysis.EstimateFrequency(steady), Frequency * 0.95, Frequency * 1.05);
+        // 実時間で動くため、音の届き方のむらで無音が少し混じることがある（設計どおり無音で埋める）。
+        // 0 をまたぐ回数で数えると無音の分だけ低く出るので、周波数ごとの強さで比べる。
+        double tone = AudioAnalysis.TonePower(steady, Frequency);
+        Assert.True(tone > 20 * AudioAnalysis.TonePower(steady, Frequency * 0.7), "1kHz が際立っていない（低い側）");
+        Assert.True(tone > 20 * AudioAnalysis.TonePower(steady, Frequency * 1.5), "1kHz が際立っていない（高い側）");
         Assert.True(AudioAnalysis.Rms(steady) > 0.2, "音が無音に近い");
     }
 
