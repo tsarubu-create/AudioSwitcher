@@ -8,7 +8,7 @@
 
 ## 置き場所
 
-- PC 側（C# / .NET 8）: `pc/`
+- PC 側（C# / .NET 10）: `pc/`
 - Android 側（Kotlin / Media3）: `android/`
 - 資料: `docs/`
 

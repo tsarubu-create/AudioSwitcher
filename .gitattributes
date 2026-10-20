@@ -1,0 +1,15 @@
+# 改行コードをそろえる（リポジトリの中は LF、取り出すときは種類ごとに決める）
+* text=auto eol=lf
+
+# Windows でしか使わないファイルは CRLF
+*.sln     text eol=crlf
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+*.ps1     text eol=crlf
+
+# バイナリ
+*.png  binary
+*.ico  binary
+*.jar  binary
+*.wav  binary
+*.ogg  binary
