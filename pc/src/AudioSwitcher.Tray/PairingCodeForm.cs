@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using AudioSwitcher.Server.Pairing;
+using Microsoft.Extensions.Logging;
 
 namespace AudioSwitcher.Tray;
 
@@ -10,6 +11,8 @@ namespace AudioSwitcher.Tray;
 /// 通知のように扱う: 出すときに入力の焦点を奪わず、タスクバーや Alt+Tab にも出さない。
 /// 残り時間は、数字を出したときから単調な時計で数える（外れて数字が変わったら、また 2:00 から）。
 /// × で閉じても、ペアリングは続く。
+/// 置き場所は、出す前と、出したあと（裏の窓ができたあと）にもう一度決め、置いた位置をログに残す
+/// （ほかの画面の真ん中に出たことがあり、原因を突き止められていないため。docs/構成.md の 2.3）。
 /// </remarks>
 internal sealed class PairingCodeForm : Form
 {
@@ -29,21 +32,24 @@ internal sealed class PairingCodeForm : Form
     private static readonly Color HoverFill = Color.FromArgb(0xEE, 0xF1, 0xF4);
 
     private readonly TimeProvider _time;
+    private readonly ILogger _logger;
     private readonly Label _code;
     private readonly Label _remaining;
     private readonly System.Windows.Forms.Timer _tick;
     private long _shownAt;
 
     /// <param name="icon">窓のアイコン。持ち主は呼び出し側で、この窓は片付けない。</param>
-    public PairingCodeForm(Icon icon)
-        : this(icon, TimeProvider.System)
+    /// <param name="logger">置いた位置を書くログ。</param>
+    public PairingCodeForm(Icon icon, ILogger logger)
+        : this(icon, logger, TimeProvider.System)
     {
     }
 
     /// <param name="time">残り時間を数える時計（単調な時刻を使う）。</param>
-    public PairingCodeForm(Icon icon, TimeProvider time)
+    public PairingCodeForm(Icon icon, ILogger logger, TimeProvider time)
     {
         _time = time;
+        _logger = logger;
         Text = "AudioSwitcher - ペアリング";
         Icon = icon;
         FormBorderStyle = FormBorderStyle.None;
@@ -127,10 +133,12 @@ internal sealed class PairingCodeForm : Form
         _code.Text = code;
         _shownAt = _time.GetTimestamp();
         UpdateRemaining();
-        PlaceAtBottomRight();
+        PlaceAtBottomRight("出す前");
         if (!Visible)
         {
             Show();
+            // 裏の窓を作るときに位置が変わっても、右下に戻す。
+            PlaceAtBottomRight("出したあと");
         }
 
         _tick.Start();
@@ -183,11 +191,21 @@ internal sealed class PairingCodeForm : Form
         _remaining.Text = $"残り {FormatRemaining(left)}";
     }
 
-    /// <summary>タスクバーを除いた作業領域の右下に置く（通知が出る場所と同じ）。</summary>
-    private void PlaceAtBottomRight()
+    /// <summary>タスクバーを除いた作業領域の右下に置く（通知が出る場所と同じ）。置いた位置をログに残す。</summary>
+    private void PlaceAtBottomRight(string when)
     {
-        var area = (Screen.PrimaryScreen ?? Screen.AllScreens[0]).WorkingArea;
-        Location = new Point(area.Right - Width - ScreenMargin, area.Bottom - Height - ScreenMargin);
+        var screen = Screen.PrimaryScreen ?? Screen.AllScreens[0];
+        var area = screen.WorkingArea;
+        var target = new Point(area.Right - Width - ScreenMargin, area.Bottom - Height - ScreenMargin);
+        Location = target;
+        _logger.LogInformation(
+            "ペアリングの数字の窓を置いた（{When}）: 狙い {Target}、実際 {Actual}、置いた画面 {Screen} の作業領域 {Area}、画面の並び {Screens}",
+            when,
+            target,
+            Bounds,
+            screen.DeviceName,
+            area,
+            string.Join("、", Screen.AllScreens.Select(s => $"{s.DeviceName}{(s.Primary ? "（主）" : "")} {s.Bounds}")));
     }
 
     [DllImport("dwmapi.dll")]
