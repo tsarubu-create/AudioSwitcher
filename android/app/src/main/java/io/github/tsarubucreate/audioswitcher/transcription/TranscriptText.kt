@@ -37,7 +37,8 @@ object Sentences {
     fun lines(text: String): List<String> =
         text.replace("\r", "")
             .split('\n')
-            .flatMap { paragraph -> paragraph.split(Regex("(?<=。)")) }
+            // 句点・「？」・「！」で改行する。「？！」のように続くときは、続いた記号のあとで1回だけ改行する。
+            .flatMap { paragraph -> paragraph.split(Regex("(?<=[。？！?!])(?![。？！?!])")) }
             .map { it.trim() }
             .filter { it.isNotEmpty() }
 }

@@ -82,6 +82,14 @@ class ChunkingTest {
         assertEquals(emptyList<String>(), Sentences.lines("  \n "))
     }
 
+    @Test
+    fun 疑問符と感嘆符でも改行し_続いた記号は分けない() {
+        assertEquals(
+            listOf("話してる？", "話してない。", "本当！？", "やった!", "え?", "そう"),
+            Sentences.lines("話してる？話してない。本当！？やった!え?そう"),
+        )
+    }
+
     private fun feed(speechMs: Long = 0, silenceMs: Long = 0): ShortArray? {
         val ms = speechMs + silenceMs
         return chunker.add(ShortArray((ms * 16).toInt()) { 1 }, isSpeech = speechMs > 0)

@@ -110,6 +110,11 @@ class GeminiTranscriber(private val apiKey: String, override val model: String) 
                         ),
                 ),
             ),
+        ).put(
+            // 「考える」量を減らして返事を速くする。gemini-3.8-flash で選べるいちばん少ない値が low
+            // （minimal はエラーになる）。無料枠のある 3.6 Flash・Flash-Lite でも low は使える（docs/構成.md の 2.5）。
+            "generationConfig",
+            JSONObject().put("thinkingConfig", JSONObject().put("thinkingLevel", "low")),
         )
         val response = post(
             "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent",
