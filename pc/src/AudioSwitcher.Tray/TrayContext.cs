@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using AudioSwitcher.Server;
+using AudioSwitcher.Server.Logging;
 using AudioSwitcher.Server.Pairing;
 
 namespace AudioSwitcher.Tray;
@@ -11,6 +12,7 @@ internal sealed class TrayContext : ApplicationContext
 {
     private readonly AudioStreamService _service;
     private readonly PairingService _pairing;
+    private readonly FileLoggerProvider _log;
     private readonly NotifyIcon _icon;
     private readonly Icon _streamingIcon = LoadIcon("app");
     private readonly Icon _idleIcon = LoadIcon("idle");
@@ -18,21 +20,26 @@ internal sealed class TrayContext : ApplicationContext
     private readonly ToolStripMenuItem _pairingStatus;
     private readonly ToolStripMenuItem _unpair;
     private readonly ToolStripMenuItem _clearLock;
+    private readonly ToolStripMenuItem _logWarning;
     private readonly WindowsFormsSynchronizationContext _ui = new();
     private PairingCodeForm? _codeForm;
 
-    public TrayContext(AudioStreamService service, PairingService pairing, int port, string logDirectory)
+    public TrayContext(AudioStreamService service, PairingService pairing, FileLoggerProvider log, int port, string logDirectory)
     {
         _service = service;
         _pairing = pairing;
+        _log = log;
+        // ログが書けていない間だけ出す。押すとログのフォルダを開く。
+        _logWarning = new ToolStripMenuItem(string.Empty, null, (_, _) => OpenFolder(logDirectory)) { Visible = false };
         _status = new ToolStripMenuItem { Enabled = false };
         _pairingStatus = new ToolStripMenuItem { Enabled = false };
         _unpair = new ToolStripMenuItem("ペアリングを解除", null, (_, _) => ConfirmUnpair());
         _clearLock = new ToolStripMenuItem("受け付けない状態を解く", null, (_, _) => _pairing.ClearLock());
 
-        var menu = new ContextMenuStrip();
+        var menu = new ContextMenuStrip { ShowItemToolTips = true };
         menu.Items.Add(new ToolStripMenuItem("AudioSwitcher（試作）") { Enabled = false });
         menu.Items.Add(_status);
+        menu.Items.Add(_logWarning);
         menu.Items.Add(new ToolStripSeparator());
         foreach (var address in LocalAddresses(port))
         {
@@ -45,7 +52,7 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add(_clearLock);
 
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("ログのフォルダを開く", null, (_, _) => Process.Start("explorer.exe", logDirectory));
+        menu.Items.Add("ログのフォルダを開く", null, (_, _) => OpenFolder(logDirectory));
         menu.Items.Add("終了", null, (_, _) => ExitThread());
 
         _icon = new NotifyIcon
@@ -60,7 +67,9 @@ internal sealed class TrayContext : ApplicationContext
 
         UpdateStatus(service.IsStreaming);
         UpdatePairingMenu();
+        UpdateLogWarning(log.CurrentFailure);
         service.StreamingChanged += OnStreamingChanged;
+        log.WriteFailureChanged += OnLogWriteFailureChanged;
         pairing.StateChanged += OnPairingStateChanged;
         pairing.CodeChanged += OnCodeChanged;
     }
@@ -70,6 +79,7 @@ internal sealed class TrayContext : ApplicationContext
         _service.StreamingChanged -= OnStreamingChanged;
         _pairing.StateChanged -= OnPairingStateChanged;
         _pairing.CodeChanged -= OnCodeChanged;
+        _log.WriteFailureChanged -= OnLogWriteFailureChanged;
         _codeForm?.Dispose();
         _icon.Visible = false;
         _icon.Dispose();
@@ -79,6 +89,18 @@ internal sealed class TrayContext : ApplicationContext
     }
 
     private void OnStreamingChanged(bool streaming) => _ui.Post(_ => UpdateStatus(streaming), null);
+
+    private void OnLogWriteFailureChanged(LogWriteFailure? failure) => _ui.Post(_ => UpdateLogWarning(failure), null);
+
+    private void UpdateLogWarning(LogWriteFailure? failure)
+    {
+        _logWarning.Visible = failure is not null;
+        _logWarning.Text = $"⚠ ログが書けていません（{failure?.Summary}）";
+        // 詳しい理由（Windows の文章とパス）は長いので、マウスを重ねたときだけ出す。
+        _logWarning.ToolTipText = failure?.Detail;
+    }
+
+    private static void OpenFolder(string path) => Process.Start("explorer.exe", path);
 
     private void OnPairingStateChanged() => _ui.Post(_ => UpdatePairingMenu(), null);
 

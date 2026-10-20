@@ -11,6 +11,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="AudioSwitcher" />
+    <InternalsVisibleTo Include="AudioSwitcher.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\AudioSwitcher.Core\AudioSwitcher.Core.csproj" />
   </ItemGroup>
 
