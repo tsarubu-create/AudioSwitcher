@@ -38,6 +38,17 @@ class ChunkingTest {
     }
 
     @Test
+    fun 声が合わせて0_5秒に満たない区間は送らずに捨てる() {
+        feed(speechMs = 400) // 一時停止の雑音のような短い音
+        feed(silenceMs = 300)
+
+        assertNull(chunker.flush())
+        // 捨てたあとは、次の区間を新しく始める（捨てた区間の音は混ぜない）。
+        feed(speechMs = 600)
+        assertEquals(600, ms(chunker.flush()!!))
+    }
+
+    @Test
     fun 声が無いまま区切っても何も返さない() {
         feed(silenceMs = 2_000)
 
@@ -77,9 +88,10 @@ class ChunkingTest {
 
     @Test
     fun 区切った音は足した順につながる() {
-        chunker.add(shortArrayOf(1, 2), isSpeech = true)
+        val speech = ShortArray(16 * 600) { 1 }
+        chunker.add(speech, isSpeech = true)
         chunker.add(shortArrayOf(3), isSpeech = false)
 
-        assertArrayEquals(shortArrayOf(1, 2, 3), chunker.flush())
+        assertArrayEquals(speech + shortArrayOf(3), chunker.flush())
     }
 }

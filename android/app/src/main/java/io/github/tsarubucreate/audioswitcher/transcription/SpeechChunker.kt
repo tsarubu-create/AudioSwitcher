@@ -8,18 +8,22 @@ package io.github.tsarubucreate.audioswitcher.transcription
  * - [maxMs] に達したら、間が無くても区切る。
  *
  * Groq は 10 秒より短い音声も 10 秒として数えるので、[minMs] は 10 秒にする。
+ * 区間の中の声が合わせて [minSpeechMs] に満たなければ、送らずに捨てる（一時停止の「プツッ」などの雑音で、
+ * 無料枠を 10 秒ぶん使ったり、声の無い音から文を作られたりしないように）。
  */
 class SpeechChunker(
     private val minMs: Long = 10_000,
     private val pauseMs: Long = 800,
     private val maxMs: Long = 60_000,
     private val preRollMs: Long = 300,
+    private val minSpeechMs: Long = 500,
     private val sampleRate: Int = PcmConverter.TARGET_RATE,
 ) {
     private val buffer = ArrayList<ShortArray>()
     private var bufferedSamples = 0
     private var preRoll = ShortArray(0)
     private var trailingPauseMs = 0L
+    private var speechMs = 0L
 
     /** 塊を足す。区切れたら区間の音を返す（区切れなければ null）。 */
     fun add(samples: ShortArray, isSpeech: Boolean): ShortArray? {
@@ -33,6 +37,7 @@ class SpeechChunker(
         }
         append(samples)
         trailingPauseMs = if (isSpeech) 0 else trailingPauseMs + toMs(samples.size)
+        if (isSpeech) speechMs += toMs(samples.size)
 
         val lengthMs = toMs(bufferedSamples)
         return if ((lengthMs >= minMs && trailingPauseMs >= pauseMs) || lengthMs >= maxMs) take() else null
@@ -41,7 +46,14 @@ class SpeechChunker(
     /** 溜まっている分を区切って返す（空白・途切れの印の前、停止のとき）。溜まっていなければ null。 */
     fun flush(): ShortArray? = if (bufferedSamples == 0) null else take()
 
-    private fun take(): ShortArray {
+    /** 区切る。声が [minSpeechMs] に満たなければ捨てて null。 */
+    private fun take(): ShortArray? {
+        val enoughSpeech = speechMs >= minSpeechMs
+        val out = drain()
+        return if (enoughSpeech) out else null
+    }
+
+    private fun drain(): ShortArray {
         val out = ShortArray(bufferedSamples)
         var offset = 0
         for (part in buffer) {
@@ -51,6 +63,7 @@ class SpeechChunker(
         buffer.clear()
         bufferedSamples = 0
         trailingPauseMs = 0
+        speechMs = 0
         return out
     }
 
