@@ -11,6 +11,7 @@ import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
@@ -73,6 +74,9 @@ import io.github.tsarubucreate.audioswitcher.ui.RouteLine
 import io.github.tsarubucreate.audioswitcher.ui.RouteState
 import io.github.tsarubucreate.audioswitcher.ui.TranscriptionSection
 import io.github.tsarubucreate.audioswitcher.ui.TranscriptionUiState
+import io.github.tsarubucreate.audioswitcher.ui.TranscriptionSettingsScreen
+import io.github.tsarubucreate.audioswitcher.ui.TranscriptionSettingsUiState
+import io.github.tsarubucreate.audioswitcher.transcription.TranscriptionMethod
 import io.github.tsarubucreate.audioswitcher.transcription.TranscriptionSettings
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -95,6 +99,8 @@ class MainActivity : ComponentActivity() {
     private var startedAt by mutableStateOf<Long?>(null)
     private lateinit var transcriptionSettings: TranscriptionSettings
     private var transcription by mutableStateOf(TranscriptionUiState())
+    private var methodSettings by mutableStateOf(TranscriptionSettingsUiState())
+    private var showMethodSettings by mutableStateOf(false)
 
     // 再生サービスが文字起こしの状態を書いたら、画面に出し直す。
     private val transcriptionListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> refreshTranscription() }
@@ -125,10 +131,31 @@ class MainActivity : ComponentActivity() {
         transcriptionSettings = TranscriptionSettings(this)
         refreshTranscription()
         transcriptionSettings.registerListener(transcriptionListener)
+        transcriptionSettings.groqKey.registerListener(transcriptionListener)
+        transcriptionSettings.geminiKey.registerListener(transcriptionListener)
         // 端末の設定で動きを減らしていたら、線の上の点を流さない。
         val reduceMotion = Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
         setContent {
             AudioSwitcherTheme {
+                // 方式の画面（文字起こしの欄の「方式を変える」から開く）。戻るで再生の画面へ戻る。
+                BackHandler(enabled = showMethodSettings) { showMethodSettings = false }
+                if (showMethodSettings) {
+                    TranscriptionSettingsScreen(
+                        state = methodSettings,
+                        onMethodChange = { transcriptionSettings.method = it },
+                        onSaveKey = { method, key -> secretFor(method)?.save(key) },
+                        onClearKey = { method -> secretFor(method)?.clear() },
+                        onSaveModel = { method, model ->
+                            when (method) {
+                                TranscriptionMethod.GROQ -> transcriptionSettings.groqModel = model
+                                TranscriptionMethod.GEMINI -> transcriptionSettings.geminiModel = model
+                                TranscriptionMethod.ON_DEVICE -> Unit
+                            }
+                        },
+                        onBack = { showMethodSettings = false },
+                    )
+                    return@AudioSwitcherTheme
+                }
                 MainScreen(
                     controller = controller,
                     paired = paired,
@@ -145,6 +172,7 @@ class MainActivity : ComponentActivity() {
                         if (enabled && transcriptionSettings.folder == null) pickFolder.launch(VAULT_FOLDER_HINT)
                     },
                     onPickFolder = { pickFolder.launch(transcriptionSettings.folder ?: VAULT_FOLDER_HINT) },
+                    onOpenMethodSettings = { showMethodSettings = true },
                 )
             }
         }
@@ -154,6 +182,8 @@ class MainActivity : ComponentActivity() {
         keyStorage.unregisterListener(keyListener)
         playbackStart.unregisterListener(startListener)
         transcriptionSettings.unregisterListener(transcriptionListener)
+        transcriptionSettings.groqKey.unregisterListener(transcriptionListener)
+        transcriptionSettings.geminiKey.unregisterListener(transcriptionListener)
         super.onDestroy()
     }
 
@@ -163,7 +193,22 @@ class MainActivity : ComponentActivity() {
             folderLabel = transcriptionSettings.folder?.let(TranscriptionSettings::folderLabel),
             status = transcriptionSettings.status,
             statusIsProblem = transcriptionSettings.statusIsProblem,
+            method = transcriptionSettings.method.label,
         )
+        methodSettings = TranscriptionSettingsUiState(
+            method = transcriptionSettings.method,
+            groqKeySaved = transcriptionSettings.groqKey.has(),
+            geminiKeySaved = transcriptionSettings.geminiKey.has(),
+            groqModel = transcriptionSettings.groqModel,
+            geminiModel = transcriptionSettings.geminiModel,
+            onDeviceAvailable = android.os.Build.VERSION.SDK_INT >= 33,
+        )
+    }
+
+    private fun secretFor(method: TranscriptionMethod): SecretStore? = when (method) {
+        TranscriptionMethod.GROQ -> transcriptionSettings.groqKey
+        TranscriptionMethod.GEMINI -> transcriptionSettings.geminiKey
+        TranscriptionMethod.ON_DEVICE -> null
     }
 
     private fun refreshPairing() {
@@ -246,6 +291,7 @@ private fun MainScreen(
     transcription: TranscriptionUiState,
     onTranscriptionEnabledChange: (Boolean) -> Unit,
     onPickFolder: () -> Unit,
+    onOpenMethodSettings: () -> Unit,
 ) {
     val colors = LocalAppColors.current
     var address by remember { mutableStateOf(initialAddress) }
@@ -285,7 +331,7 @@ private fun MainScreen(
                         onAddressSaved(it)
                     },
                 )
-                TranscriptionSection(transcription, onTranscriptionEnabledChange, onPickFolder)
+                TranscriptionSection(transcription, onTranscriptionEnabledChange, onPickFolder, onOpenMethodSettings)
             } else {
                 PairingContent(
                     notice = notice,
