@@ -37,8 +37,11 @@ interface Transcriber {
         /** 文字起こしを続けられないとき（方式が使えない・止まったなど）。[message] は画面に出す短い文。 */
         fun onError(message: String)
 
-        /** 失敗が続いたので、別の方式（C）に切り替えたいとき（docs/構成.md の 2.5）。[reason] は md と画面に出す短い理由。 */
+        /** 失敗が続いたので、次の方式に切り替えたいとき（docs/構成.md の 2.5）。[reason] は md と画面に出す短い理由。 */
         fun onFallback(reason: String) = Unit
+
+        /** 困りごとではない知らせ（選んだ方式に戻したなど）。[message] は画面に出す短い文。 */
+        fun onNotice(message: String) = Unit
     }
 
     /** 書き出す順番の札。区間を受け付けたときに取り、文字になったら [fulfill] する。 */

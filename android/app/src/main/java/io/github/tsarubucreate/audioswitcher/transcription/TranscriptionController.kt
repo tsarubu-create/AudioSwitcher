@@ -90,6 +90,8 @@ class TranscriptionController(private val context: Context, private val settings
             override fun reserve() = assembler.reserve()
 
             override fun onError(message: String) = report(message, problem = true)
+
+            override fun onNotice(message: String) = report(message, problem = false)
         })
         val created = TranscriptionSession(transcriber, assembler, monotonicMs = { SystemClock.elapsedRealtime() })
         worker.execute {
@@ -143,24 +145,32 @@ class TranscriptionController(private val context: Context, private val settings
         return minutes * 60_000
     }
 
-    /** 設定の方式で文字起こしを作る。B・A は、失敗が続いたら C に切り替えられるようにする。作れなければ状態を出して null。 */
+    /**
+     * 設定の方式で文字起こしを作る。作れなければ状態を出して null。
+     * 失敗が続いたら、優先度の順（B > A > C）に下の方式へ切り替えられるようにする（docs/構成.md の 2.5「切り替えの順」）。
+     * 下の方式は、使えるもの（A は API キーがあるとき、C は Android 13 以降）だけを並べる。
+     */
     private fun createTranscriber(): Transcriber? {
         val onDevice: (() -> Transcriber)? = if (Build.VERSION.SDK_INT >= 33) ({ OnDeviceTranscriber(context) }) else null
-        val primary: Transcriber = when (settings.method) {
+        val gemini: (() -> Transcriber)? = settings.geminiKey.load()?.let { key ->
+            val model = settings.geminiModel
+            ({ GeminiTranscriber(key, model, sender) })
+        }
+        val chain: List<() -> Transcriber> = when (settings.method) {
             TranscriptionMethod.ON_DEVICE -> return onDevice?.invoke()
                 ?: null.also { report("この端末（Android 12 以前）では端末の音声認識を使えません", problem = true) }
-            TranscriptionMethod.GROQ -> GroqTranscriber(
-                settings.groqKey.load() ?: return null.also { report("Groq の API キーがまだありません（方式を変える から入れてください）", problem = true) },
-                settings.groqModel,
-                sender,
-            )
-            TranscriptionMethod.GEMINI -> GeminiTranscriber(
-                settings.geminiKey.load() ?: return null.also { report("Gemini の API キーがまだありません（方式を変える から入れてください）", problem = true) },
-                settings.geminiModel,
-                sender,
+            TranscriptionMethod.GROQ -> {
+                val key = settings.groqKey.load()
+                    ?: return null.also { report("Groq の API キーがまだありません（方式を変える から入れてください）", problem = true) }
+                val model = settings.groqModel
+                listOfNotNull({ GroqTranscriber(key, model, sender) }, gemini, onDevice)
+            }
+            TranscriptionMethod.GEMINI -> listOfNotNull(
+                gemini ?: return null.also { report("Gemini の API キーがまだありません（方式を変える から入れてください）", problem = true) },
+                onDevice,
             )
         }
-        return SwitchableTranscriber(primary, onDevice, worker)
+        return SwitchableTranscriber(chain, worker, monotonicMs = { SystemClock.elapsedRealtime() })
     }
 
     private fun report(message: String?, problem: Boolean) {
