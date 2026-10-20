@@ -1,5 +1,6 @@
 package io.github.tsarubucreate.audioswitcher.transcription
 
+import android.util.Log
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -14,6 +15,8 @@ class TranscriptionFailure(message: String, val retryable: Boolean, cause: Throw
  * - 続けて [fallbackAfter] 区間失敗したら、切り替えを頼む（[Transcriber.Listener.onFallback]）。
  *
  * 送り直しの待ちは差し替えられる口（[sleep]）から受け取り、テストでは待たない。
+ * 送るたびに、何回目か・かかった時間・結果を [log] に残す（返事の遅さや送り直しを後から確かめるため）。
+ * 時間は単調な時計（[monotonicMs]）で計る。ログに API キーや文字にした中身は入れない。
  */
 abstract class ChunkedTranscriber(
     private val sender: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "transcription-send") },
@@ -21,6 +24,8 @@ abstract class ChunkedTranscriber(
     private val chunker: SpeechChunker = SpeechChunker(),
     private val maxRetries: Int = 2,
     private val fallbackAfter: Int = 3,
+    private val monotonicMs: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val log: (String) -> Unit = { Log.i(TAG, it) },
 ) : Transcriber {
     private var listener: Transcriber.Listener? = null
 
@@ -58,8 +63,11 @@ abstract class ChunkedTranscriber(
             var attempt = 0
             var failure: TranscriptionFailure?
             while (true) {
+                val sentAt = monotonicMs()
                 failure = try {
-                    ticket.fulfill(Sentences.lines(transcribe(wav)))
+                    val lines = Sentences.lines(transcribe(wav))
+                    log("$method: ${seconds}秒の区間、${attempt + 1}回目で成功（${monotonicMs() - sentAt}ms、${lines.size}行）")
+                    ticket.fulfill(lines)
                     consecutiveFailures = 0
                     return@execute
                 } catch (e: TranscriptionFailure) {
@@ -68,7 +76,12 @@ abstract class ChunkedTranscriber(
                     // 思わぬ失敗でも札は必ず埋める（埋めないと、後の行がいつまでも書き出されない）。送り直しはしない。
                     TranscriptionFailure("想定外の失敗（${e.javaClass.simpleName}）", retryable = false, cause = e)
                 }
-                if (!failure.retryable || attempt >= maxRetries) break
+                val again = failure.retryable && attempt < maxRetries
+                log(
+                    "$method: ${seconds}秒の区間、${attempt + 1}回目で失敗（${monotonicMs() - sentAt}ms、${failure.message}）" +
+                        if (again) "。送り直す" else "。諦める",
+                )
+                if (!again) break
                 attempt++
                 sleep(RETRY_BASE_DELAY_MS shl (attempt - 1))
             }
@@ -83,6 +96,7 @@ abstract class ChunkedTranscriber(
     }
 
     private companion object {
+        const val TAG = "Transcription"
         const val RETRY_BASE_DELAY_MS = 2_000L
     }
 }

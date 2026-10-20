@@ -13,6 +13,8 @@ class ChunkedTranscriberTest {
     private val fallbacks = ArrayList<String>()
     private val errors = ArrayList<String>()
     private val sleeps = ArrayList<Long>()
+    private val logs = ArrayList<String>()
+    private var clock = 0L
     private val listener = object : Transcriber.Listener {
         override fun reserve() = assembler.reserve()
         override fun onError(message: String) {
@@ -142,11 +144,33 @@ class ChunkedTranscriberTest {
         assertEquals(listOf("文字起こしの失敗が続いています：通信の失敗"), errors)
     }
 
+    @Test
+    fun 送るたびに何回目か_かかった時間_結果をログに残す() {
+        val transcriber = FakeTranscriber(
+            listOf(
+                Result.failure(TranscriptionFailure("時間切れ", retryable = true)),
+                Result.success("届いた。"),
+            ),
+        )
+        transcriber.start(listener)
+
+        transcriber.feed(speech(2_000), isSpeech = true)
+        transcriber.stop()
+
+        assertEquals(
+            listOf(
+                "偽の方式: 2秒の区間、1回目で失敗（1500ms、時間切れ）。送り直す",
+                "偽の方式: 2秒の区間、2回目で成功（1500ms、1行）",
+            ),
+            logs,
+        )
+    }
+
     private fun speech(ms: Long) = ShortArray((ms * 16).toInt()) { 1000 }
 
     /** 送る処理をその場で走らせ、返事は並べた順に返す。 */
     private inner class FakeTranscriber(results: List<Result<String>>) :
-        ChunkedTranscriber(sender = DirectExecutor(), sleep = { sleeps.add(it) }) {
+        ChunkedTranscriber(sender = DirectExecutor(), sleep = { sleeps.add(it) }, monotonicMs = { clock }, log = { logs.add(it) }) {
         private val queue = ArrayDeque(results)
         var calls = 0
         override val method = "偽の方式"
@@ -154,6 +178,7 @@ class ChunkedTranscriberTest {
 
         override fun transcribe(wav: ByteArray): String {
             calls++
+            clock += 1_500 // 返事に 1.5 秒かかったことにする
             return queue.removeFirst().getOrThrow()
         }
     }
