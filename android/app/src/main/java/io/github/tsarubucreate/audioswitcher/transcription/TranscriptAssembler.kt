@@ -5,6 +5,9 @@ package io.github.tsarubucreate.audioswitcher.transcription
  *
  * 返事が遅れて届く方式（B・A）では、先に起きた区間の文字が、後の印より遅れて届くことがある。
  * そこで、区間を受け付けた時点で札（[reserve]）を取り、前の札がすべて埋まってから書き出す。
+ *
+ * [sink] は鍵の中で呼ぶ（別々のスレッドから同時に届いても順番が入れ替わらないように）。
+ * そのため [sink] は、作業スレッドへ積むだけのような、すぐ終わる処理にする。
  */
 class TranscriptAssembler(private val sink: (String) -> Unit) {
     private val queue = ArrayDeque<Entry>()
@@ -32,16 +35,13 @@ class TranscriptAssembler(private val sink: (String) -> Unit) {
     }
 
     private fun drain() {
-        val ready = ArrayList<String>()
         synchronized(lock) {
             while (queue.isNotEmpty()) {
-                val head = queue.first()
-                val lines = head.lines ?: break
+                val lines = queue.first().lines ?: break
                 queue.removeFirst()
-                ready.addAll(lines.filter { it.isNotBlank() })
+                lines.filter { it.isNotBlank() }.forEach(sink)
             }
         }
-        ready.forEach(sink)
     }
 
     private class Entry(@Volatile var lines: List<String>?)

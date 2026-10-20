@@ -1,6 +1,8 @@
 package io.github.tsarubucreate.audioswitcher
 
 import android.app.PendingIntent
+import android.content.Context
+import android.content.SharedPreferences
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
@@ -16,13 +18,19 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import io.github.tsarubucreate.audioswitcher.transcription.TranscriptionController
+import io.github.tsarubucreate.audioswitcher.transcription.TranscriptionSettings
 
 /**
  * PC の音を再生し続ける前景サービス。画面を消しても止まらない。
@@ -31,6 +39,7 @@ import androidx.media3.session.MediaSessionService
  * 切れたら [ReconnectPolicy] の間をあけて繋ぎ直す。利用者が停止を押したら繋ぎ直さない。
  * PC には、ペアリングで受け取った鍵を `Authorization` ヘッダで渡す。PC が鍵を認めなければ（401）、
  * 鍵を捨てて止まる（PC 側でペアリングを解除したとき。繋ぎ直さない）。
+ * 文字起こしが「入」なら、再生している間、音の出口の手前で音を横取りして文字に起こす（docs/構成.md の 2.5）。
  */
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
@@ -40,6 +49,16 @@ class PlaybackService : MediaSessionService() {
     private val retry = Runnable { retryNow() }
     private val keyStorage by lazy { KeyStorage(this) }
     private val playbackStart by lazy { PlaybackStartStore(this) }
+    private val transcriptionSettings by lazy { TranscriptionSettings(this) }
+    private val transcription by lazy { TranscriptionController(this, transcriptionSettings) }
+
+    // 再生中に画面で文字起こしの「入・切」を切り替えたら（保存先を選び直したときも）、すぐ始める・止める。
+    private val transcriptionToggle = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        // 保存先を選び直したときも、入で再生中ならすぐ始める。
+        if (key != TranscriptionSettings.KEY_ENABLED && key != TranscriptionSettings.KEY_FOLDER) return@OnSharedPreferenceChangeListener
+        val playing = session?.player?.playWhenReady == true
+        if (transcriptionSettings.enabled && playing) transcription.start() else transcription.stop()
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -54,7 +73,7 @@ class PlaybackService : MediaSessionService() {
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
-        val player = ExoPlayer.Builder(this)
+        val player = ExoPlayer.Builder(this, renderersWithTranscriptionTap())
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(dataSourceWithKey()).setLoadErrorHandlingPolicy(NoResumeLoadErrorPolicy()),
             )
@@ -64,6 +83,7 @@ class PlaybackService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
         player.addListener(PlayerListener(player))
+        transcriptionSettings.registerListener(transcriptionToggle)
 
         val openApp = PendingIntent.getActivity(
             this,
@@ -79,6 +99,17 @@ class PlaybackService : MediaSessionService() {
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this).build().apply { setSmallIcon(R.drawable.ic_notification) },
         )
+    }
+
+    /** 音の出口の手前に「T字の分かれ道」を挟み、再生している音を文字起こしへ渡す（再生の音そのものは変えない）。 */
+    private fun renderersWithTranscriptionTap() = object : DefaultRenderersFactory(this) {
+        override fun buildAudioSink(
+            context: Context,
+            enableFloatOutput: Boolean,
+            enableAudioTrackPlaybackParams: Boolean,
+        ): AudioSink = DefaultAudioSink.Builder(context)
+            .setAudioProcessors(arrayOf(TeeAudioProcessor(transcription.tap)))
+            .build()
     }
 
     /** 開くたびに、その時点で保存している鍵をヘッダに付ける（ペアリングし直したあとも作り直さずに済む）。 */
@@ -100,6 +131,8 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         handler.removeCallbacks(retry)
         playbackStart.clear()
+        transcriptionSettings.unregisterListener(transcriptionToggle)
+        transcription.release()
         session?.run {
             player.release()
             release()
@@ -156,8 +189,11 @@ class PlaybackService : MediaSessionService() {
             // 経過時間は「再生」を押してから数え、繋ぎ直す間も数え続け、停止で消す（docs/画面.md）。
             if (playWhenReady) {
                 playbackStart.markStarted(SystemClock.elapsedRealtime())
+                // 文字起こしは「再生」から「停止」までを1回とする（入のときだけ）。
+                transcription.start()
             } else {
                 playbackStart.clear()
+                transcription.stop()
             }
 
             if (!playWhenReady) {
