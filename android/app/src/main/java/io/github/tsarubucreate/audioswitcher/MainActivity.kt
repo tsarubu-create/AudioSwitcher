@@ -76,6 +76,7 @@ import io.github.tsarubucreate.audioswitcher.ui.TranscriptionSection
 import io.github.tsarubucreate.audioswitcher.ui.TranscriptionUiState
 import io.github.tsarubucreate.audioswitcher.ui.TranscriptionSettingsScreen
 import io.github.tsarubucreate.audioswitcher.ui.TranscriptionSettingsUiState
+import io.github.tsarubucreate.audioswitcher.transcription.GroqLimits
 import io.github.tsarubucreate.audioswitcher.transcription.TranscriptionMethod
 import io.github.tsarubucreate.audioswitcher.transcription.TranscriptionSettings
 import java.time.OffsetDateTime
@@ -194,6 +195,8 @@ class MainActivity : ComponentActivity() {
             status = transcriptionSettings.status,
             statusIsProblem = transcriptionSettings.statusIsProblem,
             method = transcriptionSettings.method.label,
+            lastResult = transcriptionSettings.lastResult,
+            limitWarning = GroqLimits.warning(transcriptionSettings.groqDailyLimit),
         )
         methodSettings = TranscriptionSettingsUiState(
             method = transcriptionSettings.method,

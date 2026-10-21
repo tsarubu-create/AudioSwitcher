@@ -7,7 +7,6 @@ import android.provider.DocumentsContract
 import androidx.core.content.edit
 import io.github.tsarubucreate.audioswitcher.SecretStore
 
-/** 文字起こしの方式（docs/構成.md の 2.5）。B を主にし、A・C にも切り替えられる。 */
 /** 文字起こしの方式。並びが優先度（B > A > C。docs/構成.md の 2.5「切り替えの順」）。 */
 enum class TranscriptionMethod(val label: String) {
     GROQ("Groq Whisper"),
@@ -56,6 +55,16 @@ class TranscriptionSettings(context: Context) {
         get() = prefs.getBoolean(KEY_STATUS_PROBLEM, false)
         set(value) = prefs.edit { putBoolean(KEY_STATUS_PROBLEM, value) }
 
+    /** 前回の結果（止めたときに [UsageTally.summary] で作る）。まだ無ければ null。 */
+    var lastResult: String?
+        get() = prefs.getString(KEY_LAST_RESULT, null)
+        set(value) = prefs.edit { if (value == null) remove(KEY_LAST_RESULT) else putString(KEY_LAST_RESULT, value) }
+
+    /** Groq が最後に返した1日の回数の上限（`x-ratelimit-limit-requests`）。まだ無ければ null。 */
+    var groqDailyLimit: Int?
+        get() = if (prefs.contains(KEY_GROQ_DAILY_LIMIT)) prefs.getInt(KEY_GROQ_DAILY_LIMIT, 0) else null
+        set(value) = prefs.edit { if (value == null) remove(KEY_GROQ_DAILY_LIMIT) else putInt(KEY_GROQ_DAILY_LIMIT, value) }
+
     fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
         prefs.registerOnSharedPreferenceChangeListener(listener)
 
@@ -71,6 +80,8 @@ class TranscriptionSettings(context: Context) {
         private const val KEY_GEMINI_MODEL = "gemini_model"
         private const val KEY_STATUS = "status"
         private const val KEY_STATUS_PROBLEM = "status_problem"
+        private const val KEY_LAST_RESULT = "last_result"
+        private const val KEY_GROQ_DAILY_LIMIT = "groq_daily_limit"
 
         /** 画面に出すフォルダの名前（例: `Documents/SyncVault/30_Projects/Spaceまとめ`）。 */
         fun folderLabel(folder: Uri): String {

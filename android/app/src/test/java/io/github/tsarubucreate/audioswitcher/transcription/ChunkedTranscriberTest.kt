@@ -79,6 +79,21 @@ class ChunkedTranscriberTest {
     }
 
     @Test
+    fun 無料枠の上限が返るたびに_切り替えの数えに知らせる() {
+        var clockForTally = 0L
+        val tally = UsageTally(monotonicMs = { clockForTally })
+        val primary = FakeTranscriber(listOf(Result.failure(HttpFailures.of(429, "1")), Result.success("届いた。")))
+        val switchable = SwitchableTranscriber(listOf({ primary }), Executor { it.run() }, monotonicMs = { clock }, tally = tally)
+        switchable.start(listener)
+
+        switchable.feed(speech(2_000), isSpeech = true)
+        switchable.boundary()
+        clockForTally += 60_000
+
+        assertEquals("前回 x から 1分: 偽の方式 100%、無料枠の上限 1回", tally.summary("x"))
+    }
+
+    @Test
     fun 止めても送る役は閉じず_次の回もそのまま送れる() {
         val sender = DirectExecutor()
         val first = FakeTranscriber(listOf(Result.success("一回目。")), sender)

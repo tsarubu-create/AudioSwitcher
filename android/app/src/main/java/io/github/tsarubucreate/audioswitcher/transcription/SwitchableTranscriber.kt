@@ -12,12 +12,14 @@ import java.util.concurrent.Executor
  * 方式は [chain] の作り方から、使うときに作る（戻すたびに作り直し、失敗の数を数え直すため）。
  * 切り替えは、音を渡している作業スレッド（[switchOn]）で行う（[feed] と同時に切り替えないため）。
  * 時計は単調な時計（ミリ秒）を差し替えられる口から受け取る。
+ * [tally] があれば、方式ごとの時間・無料枠の上限・切り替えを数える（前回の結果。docs/構成.md の 2.5「無料枠の見張り」）。
  */
 class SwitchableTranscriber(
     private val chain: List<() -> Transcriber>,
     private val switchOn: Executor,
     private val monotonicMs: () -> Long,
     private val retryTopAfterMs: Long = 10 * 60 * 1000L,
+    private val tally: UsageTally? = null,
 ) : Transcriber {
     init {
         require(chain.isNotEmpty()) { "方式が1つも無い" }
@@ -47,8 +49,14 @@ class SwitchableTranscriber(
 
     private fun startCurrent(listener: Transcriber.Listener) {
         val started = current
+        tally?.use(started.method)
         started.start(object : Transcriber.Listener by listener {
             override fun onFallback(reason: String) = switchOn.execute { switchDown(started, reason) }
+
+            override fun onRateLimited() {
+                tally?.rateLimited()
+                listener.onRateLimited()
+            }
         })
     }
 
@@ -68,6 +76,7 @@ class SwitchableTranscriber(
         current = next
         level++
         switchedAt = monotonicMs()
+        tally?.switched()
         startCurrent(listener)
         listener.onError("${from.method}の失敗が続いたため、${next.method}に切り替えました")
     }
