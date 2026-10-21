@@ -69,7 +69,7 @@ private val AppTypography = Typography(
     bodySmall = TextStyle(fontSize = 13.sp, lineHeight = 20.sp),
 )
 
-/** 端末の設定に合わせて、白基調（ライト）とダークを切り替える。 */
+/** 白基調（ライト）とダークを切り替える。[dark] は、画面の右上の切り替えで選んだ色（選んでいなければ端末の設定。docs/画面.md）。 */
 @Composable
 fun AudioSwitcherTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val colors = if (dark) DarkAppColors else LightAppColors

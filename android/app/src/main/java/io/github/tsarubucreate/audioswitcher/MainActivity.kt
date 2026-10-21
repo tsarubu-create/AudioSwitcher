@@ -11,6 +11,7 @@ import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,6 +19,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -38,6 +41,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -103,6 +108,9 @@ class MainActivity : ComponentActivity() {
     private var methodSettings by mutableStateOf(TranscriptionSettingsUiState())
     private var showMethodSettings by mutableStateOf(false)
 
+    // 画面の右上の切り替えで選んだ色。一度も選んでいなければ null（端末の設定に合わせる。docs/画面.md）。
+    private var darkTheme by mutableStateOf<Boolean?>(null)
+
     // 再生サービスが文字起こしの状態を書いたら、画面に出し直す。
     private val transcriptionListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> refreshTranscription() }
 
@@ -123,6 +131,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        darkTheme = if (prefs.contains(KEY_DARK_THEME)) prefs.getBoolean(KEY_DARK_THEME, false) else null
         keyStorage = KeyStorage(this)
         playbackStart = PlaybackStartStore(this)
         refreshPairing()
@@ -137,7 +146,10 @@ class MainActivity : ComponentActivity() {
         // 端末の設定で動きを減らしていたら、線の上の点を流さない。
         val reduceMotion = Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
         setContent {
-            AudioSwitcherTheme {
+            val dark = darkTheme ?: isSystemInDarkTheme()
+            // 上の帯（時計など）の文字の色も、選んだ色に合わせる。
+            LaunchedEffect(dark) { applySystemBars(dark) }
+            AudioSwitcherTheme(dark = dark) {
                 // 方式の画面（文字起こしの欄の「方式を変える」から開く）。戻るで再生の画面へ戻る。
                 BackHandler(enabled = showMethodSettings) { showMethodSettings = false }
                 if (showMethodSettings) {
@@ -174,6 +186,11 @@ class MainActivity : ComponentActivity() {
                     },
                     onPickFolder = { pickFolder.launch(transcriptionSettings.folder ?: VAULT_FOLDER_HINT) },
                     onOpenMethodSettings = { showMethodSettings = true },
+                    dark = dark,
+                    onDarkChange = {
+                        darkTheme = it
+                        prefs.edit { putBoolean(KEY_DARK_THEME, it) }
+                    },
                 )
             }
         }
@@ -186,6 +203,16 @@ class MainActivity : ComponentActivity() {
         transcriptionSettings.groqKey.unregisterListener(transcriptionListener)
         transcriptionSettings.geminiKey.unregisterListener(transcriptionListener)
         super.onDestroy()
+    }
+
+    /** 上の帯・下の帯の文字の色を、画面の色に合わせる（帯の地は透明のまま）。 */
+    private fun applySystemBars(dark: Boolean) {
+        val style = if (dark) {
+            SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        } else {
+            SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+        }
+        enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
     }
 
     private fun refreshTranscription() {
@@ -248,6 +275,7 @@ class MainActivity : ComponentActivity() {
         const val TAG = "MainActivity"
         const val PREFS_NAME = "settings"
         const val KEY_ADDRESS = "address"
+        const val KEY_DARK_THEME = "dark_theme"
 
         /** フォルダを選ぶ画面で最初に開く場所（Obsidian の Vault の中。docs/構成.md の 2.5）。 */
         val VAULT_FOLDER_HINT: Uri = DocumentsContract.buildDocumentUri(
@@ -295,6 +323,8 @@ private fun MainScreen(
     onTranscriptionEnabledChange: (Boolean) -> Unit,
     onPickFolder: () -> Unit,
     onOpenMethodSettings: () -> Unit,
+    dark: Boolean,
+    onDarkChange: (Boolean) -> Unit,
 ) {
     val colors = LocalAppColors.current
     var address by remember { mutableStateOf(initialAddress) }
@@ -320,7 +350,23 @@ private fun MainScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 24.dp),
         ) {
-            Text("AudioSwitcher", style = MaterialTheme.typography.titleLarge, color = colors.ink)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("AudioSwitcher", style = MaterialTheme.typography.titleLarge, color = colors.ink, modifier = Modifier.weight(1f))
+                // 画面の色の切り替え（docs/画面.md）。
+                Text("ダーク", style = MaterialTheme.typography.bodySmall, color = colors.graphite)
+                Spacer(Modifier.width(8.dp))
+                Switch(
+                    checked = dark,
+                    onCheckedChange = onDarkChange,
+                    colors = SwitchDefaults.colors(
+                        checkedTrackColor = colors.signal,
+                        checkedThumbColor = colors.onSignal,
+                        uncheckedTrackColor = colors.ground,
+                        uncheckedBorderColor = colors.graphite,
+                        uncheckedThumbColor = colors.graphite,
+                    ),
+                )
+            }
             Spacer(Modifier.height(32.dp))
             if (paired) {
                 PlayerSection(
