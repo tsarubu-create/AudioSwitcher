@@ -34,6 +34,10 @@ class TranscriptionController(private val context: Context, private val settings
     private var session: TranscriptionSession? = null
     private var writer: TranscriptWriter? = null
 
+    // 画面のスレッドだけで触る。今の回の数え（前回の結果）と、始めた時刻の表示。
+    private var tally: UsageTally? = null
+    private var startedLabel = ""
+
     @Volatile private var active = false
 
     /** ExoPlayer の音の出口の手前に挟む「T字の分かれ道」に渡す受け口。 */
@@ -69,7 +73,8 @@ class TranscriptionController(private val context: Context, private val settings
             !settings.enabled -> return
             folder == null -> return report("保存先のフォルダを選んでください", problem = true)
         }
-        val transcriber = createTranscriber() ?: return
+        val counting = UsageTally(monotonicMs = { SystemClock.elapsedRealtime() })
+        val transcriber = createTranscriber(counting) ?: return
         val writer = TranscriptWriter(
             output = SafTranscriptOutput(context.contentResolver, folder!!),
             wallClock = { ZonedDateTime.now() },
@@ -99,6 +104,8 @@ class TranscriptionController(private val context: Context, private val settings
             this.writer = writer
         }
         active = true
+        tally = counting
+        startedLabel = STARTED_LABEL.format(ZonedDateTime.now())
         report("文字起こし中（まだ書いていない）", problem = false)
         Log.i(TAG, "文字起こしを始めた（${transcriber.method}）")
     }
@@ -113,6 +120,8 @@ class TranscriptionController(private val context: Context, private val settings
             writer?.finish()
             writer = null
         }
+        tally?.let { settings.lastResult = it.summary(startedLabel) }
+        tally = null
         report(null, problem = false)
         Log.i(TAG, "文字起こしを止めた")
     }
@@ -150,27 +159,35 @@ class TranscriptionController(private val context: Context, private val settings
      * 失敗が続いたら、優先度の順（B > A > C）に下の方式へ切り替えられるようにする（docs/構成.md の 2.5「切り替えの順」）。
      * 下の方式は、使えるもの（A は API キーがあるとき、C は Android 13 以降）だけを並べる。
      */
-    private fun createTranscriber(): Transcriber? {
+    private fun createTranscriber(tally: UsageTally): Transcriber? {
         val onDevice: (() -> Transcriber)? = if (Build.VERSION.SDK_INT >= 33) ({ OnDeviceTranscriber(context) }) else null
         val gemini: (() -> Transcriber)? = settings.geminiKey.load()?.let { key ->
             val model = settings.geminiModel
             ({ GeminiTranscriber(key, model, sender) })
         }
         val chain: List<() -> Transcriber> = when (settings.method) {
-            TranscriptionMethod.ON_DEVICE -> return onDevice?.invoke()
-                ?: null.also { report("この端末（Android 12 以前）では端末の音声認識を使えません", problem = true) }
+            TranscriptionMethod.ON_DEVICE -> listOf(
+                onDevice ?: return null.also { report("この端末（Android 12 以前）では端末の音声認識を使えません", problem = true) },
+            )
             TranscriptionMethod.GROQ -> {
                 val key = settings.groqKey.load()
                     ?: return null.also { report("Groq の API キーがまだありません（方式を変える から入れてください）", problem = true) }
                 val model = settings.groqModel
-                listOfNotNull({ GroqTranscriber(key, model, sender) }, gemini, onDevice)
+                listOfNotNull({ GroqTranscriber(key, model, sender, onDailyLimit = ::onGroqDailyLimit) }, gemini, onDevice)
             }
             TranscriptionMethod.GEMINI -> listOfNotNull(
                 gemini ?: return null.also { report("Gemini の API キーがまだありません（方式を変える から入れてください）", problem = true) },
                 onDevice,
             )
         }
-        return SwitchableTranscriber(chain, worker, monotonicMs = { SystemClock.elapsedRealtime() })
+        return SwitchableTranscriber(chain, worker, monotonicMs = { SystemClock.elapsedRealtime() }, tally = tally)
+    }
+
+    /** Groq が返した1日の回数の上限を覚える（送る役のスレッドから呼ばれる）。変わったときだけログに書く。 */
+    private fun onGroqDailyLimit(limit: Int) {
+        if (settings.groqDailyLimit == limit) return
+        Log.i(TAG, "Groq の1日の回数の上限: $limit（前は ${settings.groqDailyLimit ?: "未記録"}）")
+        settings.groqDailyLimit = limit
     }
 
     private fun report(message: String?, problem: Boolean) {
@@ -180,6 +197,7 @@ class TranscriptionController(private val context: Context, private val settings
 
     private companion object {
         const val TAG = "Transcription"
+        val STARTED_LABEL: java.time.format.DateTimeFormatter = java.time.format.DateTimeFormatter.ofPattern("M/d HH:mm")
         const val DEBUG_PART_MINUTES_FILE = "debug_part_minutes"
 
         /** 横取りした音を 16bit の PCM にする（ExoPlayer の出口は 16bit か float）。それ以外の形は扱わない。 */

@@ -42,6 +42,9 @@ interface Transcriber {
 
         /** 困りごとではない知らせ（選んだ方式に戻したなど）。[message] は画面に出す短い文。 */
         fun onNotice(message: String) = Unit
+
+        /** 無料枠の上限（429）が返ったとき（送り直しも1回）。前回の結果に数える。 */
+        fun onRateLimited() = Unit
     }
 
     /** 書き出す順番の札。区間を受け付けたときに取り、文字になったら [fulfill] する。 */

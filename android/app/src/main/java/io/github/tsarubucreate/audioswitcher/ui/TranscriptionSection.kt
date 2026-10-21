@@ -23,6 +23,10 @@ data class TranscriptionUiState(
     val status: String? = null,
     val statusIsProblem: Boolean = false,
     val method: String = "",
+    /** 前回の結果（docs/構成.md の 2.5「無料枠の見張り」）。まだ無ければ null。 */
+    val lastResult: String? = null,
+    /** 無料枠が縮んだときの知らせ（赤で出す）。無ければ null。 */
+    val limitWarning: String? = null,
 )
 
 /**
@@ -70,6 +74,12 @@ fun TranscriptionSection(
     }
     state.status?.let {
         Text(it, style = MaterialTheme.typography.bodySmall, color = if (state.statusIsProblem) colors.alert else colors.ink)
+    }
+    state.lastResult?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = colors.graphite)
+    }
+    state.limitWarning?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = colors.alert)
     }
     Text("方式: ${state.method}", style = MaterialTheme.typography.bodySmall, color = colors.graphite)
     TextButton(onClick = onOpenMethodSettings) {

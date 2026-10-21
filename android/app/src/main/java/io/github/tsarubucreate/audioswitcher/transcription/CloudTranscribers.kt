@@ -33,8 +33,20 @@ object HttpFailures {
     fun isValidModel(model: String): Boolean = Regex("^[A-Za-z0-9._-]+$").matches(model)
 }
 
-/** HTTP で送り、返事の本文を返す。返事を [readTimeoutMs] まで待つ。失敗は [TranscriptionFailure] にする。 */
-private fun post(url: String, headers: Map<String, String>, body: ByteArray, readTimeoutMs: Int = 60_000): String {
+/** 返事の本文と、[post] で頼んだヘッダの値（名前は小文字）。 */
+private class HttpReply(val body: String, val headers: Map<String, String?>)
+
+/**
+ * HTTP で送り、返事の本文と [readHeaders] のヘッダの値を返す。返事を [readTimeoutMs] まで待つ。
+ * 失敗は [TranscriptionFailure] にする。
+ */
+private fun post(
+    url: String,
+    headers: Map<String, String>,
+    body: ByteArray,
+    readTimeoutMs: Int = 60_000,
+    readHeaders: List<String> = emptyList(),
+): HttpReply {
     val connection = URL(url).openConnection() as HttpURLConnection
     try {
         connection.requestMethod = "POST"
@@ -45,7 +57,8 @@ private fun post(url: String, headers: Map<String, String>, body: ByteArray, rea
         connection.outputStream.use { it.write(body) }
         val code = connection.responseCode
         if (code !in 200..299) throw HttpFailures.of(code, connection.getHeaderField("Retry-After"))
-        return connection.inputStream.bufferedReader().use { it.readText() }
+        val text = connection.inputStream.bufferedReader().use { it.readText() }
+        return HttpReply(text, readHeaders.associate { it.lowercase() to connection.getHeaderField(it) })
     } catch (e: IOException) {
         throw TranscriptionFailure("通信の失敗（${e.javaClass.simpleName}）", retryable = true, cause = e)
     } finally {
@@ -56,8 +69,14 @@ private fun post(url: String, headers: Map<String, String>, body: ByteArray, rea
 /**
  * B: Groq の Whisper（docs/構成.md の 2.5）。区間の WAV を送り、日本語の文字を受け取る。
  * API キーは `Authorization` ヘッダで渡す。
+ * 返事のヘッダ `x-ratelimit-limit-requests`（1日の回数の上限）を読めたら [onDailyLimit] に渡す（無料枠の見張り）。
  */
-class GroqTranscriber(private val apiKey: String, override val model: String, sender: Executor) : ChunkedTranscriber(sender) {
+class GroqTranscriber(
+    private val apiKey: String,
+    override val model: String,
+    sender: Executor,
+    private val onDailyLimit: (Int) -> Unit = {},
+) : ChunkedTranscriber(sender) {
     override val method = "Groq Whisper"
 
     override fun transcribe(wav: ByteArray): String {
@@ -77,13 +96,15 @@ class GroqTranscriber(private val apiKey: String, override val model: String, se
             write(wav)
             write("\r\n--$boundary--\r\n".toByteArray())
         }.toByteArray()
-        val response = post(
+        val reply = post(
             ENDPOINT,
             mapOf("Authorization" to "Bearer $apiKey", "Content-Type" to "multipart/form-data; boundary=$boundary"),
             body,
+            readHeaders = listOf(DAILY_LIMIT_HEADER),
         )
+        GroqLimits.parse(reply.headers[DAILY_LIMIT_HEADER])?.let(onDailyLimit)
         return try {
-            JSONObject(response).optString("text")
+            JSONObject(reply.body).optString("text")
         } catch (e: JSONException) {
             throw TranscriptionFailure("返事が読めない", retryable = false, cause = e)
         }
@@ -93,6 +114,7 @@ class GroqTranscriber(private val apiKey: String, override val model: String, se
         const val DEFAULT_MODEL = "whisper-large-v3-turbo"
         private const val PUNCTUATION_PROMPT = "こんにちは。今日はよろしくお願いします。では、始めましょう。"
         private const val ENDPOINT = "https://api.groq.com/openai/v1/audio/transcriptions"
+        private const val DAILY_LIMIT_HEADER = "x-ratelimit-limit-requests"
     }
 }
 
@@ -132,7 +154,7 @@ class GeminiTranscriber(private val apiKey: String, override val model: String, 
             READ_TIMEOUT_MS,
         )
         return try {
-            val candidates = JSONObject(response).optJSONArray("candidates") ?: return ""
+            val candidates = JSONObject(response.body).optJSONArray("candidates") ?: return ""
             val parts = candidates.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts") ?: return ""
             (0 until parts.length()).joinToString("\n") { parts.optJSONObject(it)?.optString("text").orEmpty() }
         } catch (e: JSONException) {

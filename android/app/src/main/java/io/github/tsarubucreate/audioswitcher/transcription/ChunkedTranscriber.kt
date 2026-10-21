@@ -90,6 +90,8 @@ abstract class ChunkedTranscriber(
                     // 思わぬ失敗でも札は必ず埋める（埋めないと、後の行がいつまでも書き出されない）。送り直しはしない。
                     TranscriptionFailure("想定外の失敗（${e.javaClass.simpleName}）", retryable = false, cause = e)
                 }
+                // 無料枠の上限のときだけ waitMs がある。
+                if (failure.waitMs != null) current.onRateLimited()
                 val wait = failure.waitMs ?: (RETRY_BASE_DELAY_MS shl attempt)
                 val again = failure.retryable && attempt < maxRetries && wait <= maxWaitMs
                 log(
