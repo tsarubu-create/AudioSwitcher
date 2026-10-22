@@ -1,9 +1,13 @@
 package io.github.tsarubucreate.audioswitcher
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.net.Uri
 import android.os.SystemClock
@@ -37,6 +41,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -111,6 +117,30 @@ class MainActivity : ComponentActivity() {
     // 画面の右上の切り替えで選んだ色。一度も選んでいなければ null（端末の設定に合わせる。docs/画面.md）。
     private var darkTheme by mutableStateOf<Boolean?>(null)
 
+    // 音の切り替え（PC の音 / 端末の音。docs/構成.md の 2.7）と、端末の音の取り込みの状態。
+    private var deviceSource by mutableStateOf(false)
+    private lateinit var captureState: CaptureState
+    private var captureStartedAt by mutableStateOf<Long?>(null)
+    private var captureProblem by mutableStateOf<String?>(null)
+    private val captureListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> refreshCapture() }
+
+    // 端末の音: 録音の許可 → Android の画面のキャプチャの確かめ → 取り込みサービスを始める。
+    private val requestRecordAudio = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) askCaptureConsent() else captureState.problem = "録音の許可が無いので、端末の音を取り込めません"
+    }
+    private val captureConsent = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = result.data
+        if (result.resultCode != RESULT_OK || data == null) {
+            captureState.problem = "画面のキャプチャが許可されなかったので、始めませんでした"
+            return@registerForActivityResult
+        }
+        startForegroundService(
+            Intent(this, CaptureService::class.java)
+                .putExtra(CaptureService.EXTRA_RESULT_CODE, result.resultCode)
+                .putExtra(CaptureService.EXTRA_DATA, data),
+        )
+    }
+
     // 再生サービスが文字起こしの状態を書いたら、画面に出し直す。
     private val transcriptionListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> refreshTranscription() }
 
@@ -132,6 +162,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         darkTheme = if (prefs.contains(KEY_DARK_THEME)) prefs.getBoolean(KEY_DARK_THEME, false) else null
+        deviceSource = prefs.getBoolean(KEY_DEVICE_SOURCE, false) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        captureState = CaptureState(this)
+        refreshCapture()
+        captureState.registerListener(captureListener)
         keyStorage = KeyStorage(this)
         playbackStart = PlaybackStartStore(this)
         refreshPairing()
@@ -191,12 +225,33 @@ class MainActivity : ComponentActivity() {
                         darkTheme = it
                         prefs.edit { putBoolean(KEY_DARK_THEME, it) }
                     },
+                    device = DeviceUiState(
+                        selected = deviceSource,
+                        available = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q,
+                        startedAt = captureStartedAt,
+                        problem = captureProblem,
+                        canStart = transcription.enabled && transcription.folderLabel != null,
+                    ),
+                    onSourceChange = {
+                        deviceSource = it
+                        prefs.edit { putBoolean(KEY_DEVICE_SOURCE, it) }
+                    },
+                    onDeviceStart = {
+                        captureState.problem = null
+                        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            askCaptureConsent()
+                        } else {
+                            requestRecordAudio.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    onDeviceStop = { CaptureService.stop(this) },
                 )
             }
         }
     }
 
     override fun onDestroy() {
+        captureState.unregisterListener(captureListener)
         keyStorage.unregisterListener(keyListener)
         playbackStart.unregisterListener(startListener)
         transcriptionSettings.unregisterListener(transcriptionListener)
@@ -213,6 +268,16 @@ class MainActivity : ComponentActivity() {
             SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
         }
         enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+    }
+
+    private fun refreshCapture() {
+        captureStartedAt = captureState.startedAt()
+        captureProblem = captureState.problem
+    }
+
+    /** Android の画面のキャプチャの確かめを出す（端末の音を取り込むのに要る。始めるたびに出る）。 */
+    private fun askCaptureConsent() {
+        captureConsent.launch(getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent())
     }
 
     private fun refreshTranscription() {
@@ -276,6 +341,7 @@ class MainActivity : ComponentActivity() {
         const val PREFS_NAME = "settings"
         const val KEY_ADDRESS = "address"
         const val KEY_DARK_THEME = "dark_theme"
+        const val KEY_DEVICE_SOURCE = "device_source"
 
         /** フォルダを選ぶ画面で最初に開く場所（Obsidian の Vault の中。docs/構成.md の 2.5）。 */
         val VAULT_FOLDER_HINT: Uri = DocumentsContract.buildDocumentUri(
@@ -325,6 +391,10 @@ private fun MainScreen(
     onOpenMethodSettings: () -> Unit,
     dark: Boolean,
     onDarkChange: (Boolean) -> Unit,
+    device: DeviceUiState,
+    onSourceChange: (Boolean) -> Unit,
+    onDeviceStart: () -> Unit,
+    onDeviceStop: () -> Unit,
 ) {
     val colors = LocalAppColors.current
     var address by remember { mutableStateOf(initialAddress) }
@@ -369,17 +439,28 @@ private fun MainScreen(
             }
             Spacer(Modifier.height(32.dp))
             if (paired) {
-                PlayerSection(
-                    controller = controller,
-                    state = state,
-                    startedAt = startedAt,
-                    reduceMotion = reduceMotion,
-                    address = address,
-                    onAddressChange = {
-                        address = it
-                        onAddressSaved(it)
-                    },
+                SourceSwitch(
+                    device = device,
+                    // 再生中・取り込み中は切り替えない（同時には使わない。docs/構成.md の 2.7）。
+                    locked = state.playWhenReady || device.startedAt != null,
+                    onSourceChange = onSourceChange,
                 )
+                Spacer(Modifier.height(24.dp))
+                if (device.selected) {
+                    DeviceSection(device, reduceMotion, onDeviceStart, onDeviceStop)
+                } else {
+                    PlayerSection(
+                        controller = controller,
+                        state = state,
+                        startedAt = startedAt,
+                        reduceMotion = reduceMotion,
+                        address = address,
+                        onAddressChange = {
+                            address = it
+                            onAddressSaved(it)
+                        },
+                    )
+                }
                 TranscriptionSection(transcription, onTranscriptionEnabledChange, onPickFolder, onOpenMethodSettings)
             } else {
                 PairingContent(
@@ -393,6 +474,101 @@ private fun MainScreen(
                     },
                 )
             }
+        }
+    }
+}
+
+/** 端末の音（docs/構成.md の 2.7）の状態。 */
+private data class DeviceUiState(
+    /** 「端末の音」を選んでいる。 */
+    val selected: Boolean,
+    /** この端末で使える（Android 10 以降）。 */
+    val available: Boolean,
+    /** 取り込みを始めた時刻。止まっていれば null。 */
+    val startedAt: Long?,
+    /** 止まった理由。無ければ null。 */
+    val problem: String?,
+    /** 文字起こしが「入」で、保存先がある。 */
+    val canStart: Boolean,
+)
+
+/** 音の切り替え（PC の音 / 端末の音。docs/画面.md）。 */
+@Composable
+private fun SourceSwitch(device: DeviceUiState, locked: Boolean, onSourceChange: (Boolean) -> Unit) {
+    val colors = LocalAppColors.current
+    val chipColors = FilterChipDefaults.filterChipColors(
+        selectedContainerColor = colors.signal,
+        selectedLabelColor = colors.onSignal,
+        labelColor = colors.graphite,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = !device.selected,
+            onClick = { onSourceChange(false) },
+            enabled = !locked,
+            label = { Text("PC の音", style = MaterialTheme.typography.bodySmall) },
+            colors = chipColors,
+        )
+        FilterChip(
+            selected = device.selected,
+            onClick = { onSourceChange(true) },
+            enabled = !locked && device.available,
+            label = { Text("端末の音", style = MaterialTheme.typography.bodySmall) },
+            colors = chipColors,
+        )
+    }
+    if (!device.available) {
+        Text("端末の音は Android 10 以降で使えます", style = MaterialTheme.typography.bodySmall, color = colors.graphite)
+    }
+}
+
+/** 端末の音の画面: X から文字起こしへの線、状態、経過時間、再生・停止（docs/画面.md）。 */
+@Composable
+private fun DeviceSection(device: DeviceUiState, reduceMotion: Boolean, onStart: () -> Unit, onStop: () -> Unit) {
+    val colors = LocalAppColors.current
+    val running = device.startedAt != null
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("X", style = MaterialTheme.typography.labelLarge, color = colors.ink)
+        RouteLine(if (running) RouteState.Playing else RouteState.Idle, reduceMotion, Modifier.weight(1f).padding(horizontal = 12.dp))
+        Text("文字起こし", style = MaterialTheme.typography.labelLarge, color = colors.ink)
+    }
+    Text("X のアプリの音だけを取り込みます", style = MaterialTheme.typography.bodySmall, color = colors.graphite)
+
+    Spacer(Modifier.height(40.dp))
+    val status = when {
+        running -> "取り込み中"
+        device.problem != null -> device.problem
+        !device.canStart -> "文字起こしを入にして、保存先を選んでください"
+        else -> "停止中"
+    }
+    Text(
+        status,
+        style = MaterialTheme.typography.bodyLarge,
+        color = if (!running && device.problem != null) colors.alert else colors.ink,
+    )
+    device.startedAt?.let { ElapsedClock(it) }
+
+    Spacer(Modifier.height(32.dp))
+    val shape = RoundedCornerShape(12.dp)
+    if (running) {
+        OutlinedButton(
+            onClick = onStop,
+            shape = shape,
+            border = BorderStroke(1.dp, colors.graphite),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.ink),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) {
+            Text("停止", style = MaterialTheme.typography.labelLarge)
+        }
+    } else {
+        Button(
+            onClick = onStart,
+            enabled = device.canStart,
+            shape = shape,
+            colors = ButtonDefaults.buttonColors(containerColor = colors.signal, contentColor = colors.onSignal),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) {
+            Text("再生", style = MaterialTheme.typography.labelLarge)
         }
     }
 }

@@ -17,7 +17,8 @@ import java.time.ZonedDateTime
 import java.util.concurrent.Executors
 
 /**
- * 再生サービスの中で文字起こしを動かす。再生している音を横取りし（[tap]）、「再生」から「停止」までを1回として扱う。
+ * 再生サービス（PC の音）と取り込みサービス（端末の音。docs/構成.md の 2.7）の中で文字起こしを動かす。
+ * 音は、再生している音の横取り（[tap]）か、取り込んだ音（[feedPcm]）で受け取り、「再生」から「停止」までを1回として扱う。
  *
  * 横取りした音の変換・空白と途切れの検出・ファイルへの書き出しは、すべて文字起こし専用の作業スレッド1本で順に行う
  * （再生のスレッドや画面のスレッドで時間のかかることをしないため。順番も自然に守られる）。
@@ -26,8 +27,8 @@ import java.util.concurrent.Executors
 class TranscriptionController(private val context: Context, private val settings: TranscriptionSettings) {
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "transcription") }
 
-    // 区間を送る役（B・A）。回をまたいで1本を使い回し、前の回の残りを送り終えてから次の回を送る（docs/構成.md の 2.5）。
-    private val sender = Executors.newSingleThreadExecutor { Thread(it, "transcription-send") }
+    // 区間を送る役（B・A）。アプリで1本を使い回す（TranscriptionSender）。
+    private val sender = TranscriptionSender.executor
     private val converter = PcmConverter()
 
     // 作業スレッドだけで触る。
@@ -55,26 +56,33 @@ class TranscriptionController(private val context: Context, private val settings
         override fun handleBuffer(buffer: ByteBuffer) {
             if (!active || sampleRate <= 0 || channels <= 0) return
             val samples = toShorts(buffer, encoding) ?: return
-            val rate = sampleRate
-            val count = channels
-            worker.execute {
-                val current = session ?: return@execute
-                converter.configure(rate, count)
-                current.onPcm(converter.convert(samples))
-            }
+            feedPcm(samples, sampleRate, channels)
         }
     }
 
-    /** 「再生」を押したとき、または再生中に文字起こしを「入」にしたとき。画面のスレッドから呼ぶ。 */
-    fun start() {
-        if (active) return
+    /** 16bit の PCM（[channels] の並び）を渡す。どのスレッドから呼んでもよい。文字起こしをしていなければ捨てる。 */
+    fun feedPcm(samples: ShortArray, sampleRate: Int, channels: Int) {
+        if (!active || sampleRate <= 0 || channels <= 0) return
+        worker.execute {
+            val current = session ?: return@execute
+            converter.configure(sampleRate, channels)
+            current.onPcm(converter.convert(samples))
+        }
+    }
+
+    /**
+     * 「再生」を押したとき、または再生中に文字起こしを「入」にしたとき。画面のスレッドから呼ぶ。
+     * 始めた（または始めていた）ら true。「切」・保存先が無い・方式を作れないときは false。
+     */
+    fun start(): Boolean {
+        if (active) return true
         val folder = settings.folder
         when {
-            !settings.enabled -> return
-            folder == null -> return report("保存先のフォルダを選んでください", problem = true)
+            !settings.enabled -> return false
+            folder == null -> return false.also { report("保存先のフォルダを選んでください", problem = true) }
         }
         val counting = UsageTally(monotonicMs = { SystemClock.elapsedRealtime() })
-        val transcriber = createTranscriber(counting) ?: return
+        val transcriber = createTranscriber(counting) ?: return false
         val writer = TranscriptWriter(
             output = SafTranscriptOutput(context.contentResolver, folder!!),
             wallClock = { ZonedDateTime.now() },
@@ -108,6 +116,7 @@ class TranscriptionController(private val context: Context, private val settings
         startedLabel = STARTED_LABEL.format(ZonedDateTime.now())
         report("文字起こし中（まだ書いていない）", problem = false)
         Log.i(TAG, "文字起こしを始めた（${transcriber.method}）")
+        return true
     }
 
     /** 「停止」したとき、または文字起こしを「切」にしたとき。 */
@@ -128,8 +137,8 @@ class TranscriptionController(private val context: Context, private val settings
 
     fun release() {
         stop()
+        // 送る役はアプリで1本なので閉じない（送り終えるまで続ける）。
         worker.shutdown()
-        sender.shutdown()
     }
 
     /**
