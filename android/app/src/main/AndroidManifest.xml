@@ -48,6 +48,27 @@
             </intent-filter>
         </service>
 
+        <!-- ホーム画面のウィジェット（docs/画面.md）。 -->
+        <receiver
+            android:name=".AudioWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/audio_widget_info" />
+        </receiver>
+
+        <!-- ウィジェットの丸いボタンから一瞬だけ開く、見えない画面（始める・止める）。 -->
+        <activity
+            android:name=".WidgetActionActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="false"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- 端末の音の取り込み（docs/構成.md の 2.7）。取り込みは種類が mediaProjection の前景サービスでしか始められない。 -->
         <service
             android:name=".CaptureService"

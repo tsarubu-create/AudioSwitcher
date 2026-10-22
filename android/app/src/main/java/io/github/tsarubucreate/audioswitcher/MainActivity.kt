@@ -120,6 +120,12 @@ class MainActivity : ComponentActivity() {
     private var captureProblem by mutableStateOf<String?>(null)
     private val captureListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> refreshCapture() }
 
+    // ホーム画面のウィジェットで音を切り替えたら、画面にも合わせる。
+    private lateinit var appSettings: AppSettings
+    private val appSettingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        deviceSource = appSettings.deviceSource && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+    }
+
     // 端末の音: 録音の許可 → Android の画面のキャプチャの確かめ → 取り込みサービスを始める。
     private val requestRecordAudio = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) askCaptureConsent() else captureState.problem = "録音の許可が無いので、端末の音を取り込めません"
@@ -157,6 +163,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val settings = AppSettings(this)
+        appSettings = settings
+        settings.registerListener(appSettingsListener)
         darkTheme = settings.darkTheme
         deviceSource = settings.deviceSource && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
         captureState = CaptureState(this)
@@ -220,6 +228,7 @@ class MainActivity : ComponentActivity() {
                     onDarkChange = {
                         darkTheme = it
                         settings.darkTheme = it
+                        AudioWidget.update(this)
                     },
                     device = DeviceUiState(
                         selected = deviceSource,
@@ -231,6 +240,7 @@ class MainActivity : ComponentActivity() {
                     onSourceChange = {
                         deviceSource = it
                         settings.deviceSource = it
+                        AudioWidget.update(this)
                     },
                     onDeviceStart = {
                         captureState.problem = null
@@ -247,6 +257,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        appSettings.unregisterListener(appSettingsListener)
         captureState.unregisterListener(captureListener)
         keyStorage.unregisterListener(keyListener)
         playbackStart.unregisterListener(startListener)

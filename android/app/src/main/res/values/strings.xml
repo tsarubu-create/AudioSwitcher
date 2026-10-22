@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AudioSwitcher</string>
+    <string name="widget_description">録音・停止と、PC の音・端末の音の切り替え</string>
+    <string name="widget_record">録音を始める</string>
+    <string name="widget_stop">止める</string>
+    <string name="widget_source_pc">PC</string>
+    <string name="widget_source_device">端末</string>
 </resources>

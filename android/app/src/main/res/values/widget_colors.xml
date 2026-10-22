@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ホーム画面のウィジェットの色（ui/Theme.kt と同じ値。ウィジェットはアプリのダークの選択に合わせて、light・dark を選ぶ）。 -->
+<resources>
+    <color name="widget_ground_light">#FFFFFFFF</color>
+    <color name="widget_graphite_light">#FF57606A</color>
+    <color name="widget_rule_light">#FFD0D7DE</color>
+    <color name="widget_signal_light">#FF0969DA</color>
+    <color name="widget_onSignal_light">#FFFFFFFF</color>
+    <color name="widget_alert_light">#FFCF222E</color>
+    <color name="widget_ground_dark">#FF161B21</color>
+    <color name="widget_graphite_dark">#FF9AA4AE</color>
+    <color name="widget_rule_dark">#FF30363D</color>
+    <color name="widget_signal_dark">#FF4C9AFF</color>
+    <color name="widget_onSignal_dark">#FF0B1F3A</color>
+    <color name="widget_alert_dark">#FFFF7B72</color>
+</resources>
