@@ -3,7 +3,6 @@ package io.github.tsarubucreate.audioswitcher
 import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
-import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
@@ -70,7 +69,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.core.content.edit
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -158,9 +156,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        darkTheme = if (prefs.contains(KEY_DARK_THEME)) prefs.getBoolean(KEY_DARK_THEME, false) else null
-        deviceSource = prefs.getBoolean(KEY_DEVICE_SOURCE, false) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        val settings = AppSettings(this)
+        darkTheme = settings.darkTheme
+        deviceSource = settings.deviceSource && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
         captureState = CaptureState(this)
         refreshCapture()
         captureState.registerListener(captureListener)
@@ -207,8 +205,8 @@ class MainActivity : ComponentActivity() {
                     notice = notice,
                     startedAt = startedAt,
                     reduceMotion = reduceMotion,
-                    initialAddress = prefs.getString(KEY_ADDRESS, "") ?: "",
-                    onAddressSaved = { prefs.edit { putString(KEY_ADDRESS, it) } },
+                    initialAddress = settings.address,
+                    onAddressSaved = { settings.address = it },
                     onPaired = { keyStorage.save(it) },
                     onNoticeDone = { keyStorage.clearNotice() },
                     transcription = transcription,
@@ -221,7 +219,7 @@ class MainActivity : ComponentActivity() {
                     dark = dark,
                     onDarkChange = {
                         darkTheme = it
-                        prefs.edit { putBoolean(KEY_DARK_THEME, it) }
+                        settings.darkTheme = it
                     },
                     device = DeviceUiState(
                         selected = deviceSource,
@@ -232,7 +230,7 @@ class MainActivity : ComponentActivity() {
                     ),
                     onSourceChange = {
                         deviceSource = it
-                        prefs.edit { putBoolean(KEY_DEVICE_SOURCE, it) }
+                        settings.deviceSource = it
                     },
                     onDeviceStart = {
                         captureState.problem = null
@@ -336,10 +334,6 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val TAG = "MainActivity"
-        const val PREFS_NAME = "settings"
-        const val KEY_ADDRESS = "address"
-        const val KEY_DARK_THEME = "dark_theme"
-        const val KEY_DEVICE_SOURCE = "device_source"
 
         /** フォルダを選ぶ画面で最初に開く場所（Obsidian の Vault の中。docs/構成.md の 2.5）。 */
         val VAULT_FOLDER_HINT: Uri = DocumentsContract.buildDocumentUri(
