@@ -8,6 +8,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Android 14 以降で、再生の前景サービスに要る。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- 端末の音（X の Space）を取り込んで文字に起こすため（docs/構成.md の 2.7）。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
+    <!-- X のアプリの番号（uid）を調べるため（Android 11 以降は、見るアプリを書いておく決まり）。 -->
+    <queries>
+        <package android:name="com.twitter.android" />
+    </queries>
 
     <application
         android:icon="@mipmap/ic_launcher"
@@ -39,6 +47,12 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- 端末の音の取り込み（docs/構成.md の 2.7）。取り込みは種類が mediaProjection の前景サービスでしか始められない。 -->
+        <service
+            android:name=".CaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
     </application>
 
 </manifest>

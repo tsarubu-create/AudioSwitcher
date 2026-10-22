@@ -1,16 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Debug 版にだけ入る。端末の中の音声認識（文字起こしの C 案）を確かめるための画面。docs/構成.md の 2.5。 -->
+<!--
+    Debug 版にだけ入る確かめ用の画面。
+    - AsrProbeActivity: 端末の中の音声認識（文字起こしの C 案）。docs/構成.md の 2.5。
+    - CaptureProbeActivity: 端末の中で鳴っている音（X の Space）を取り込めるか。docs/構成.md の 2.7。
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-        録音の許可（RECORD_AUDIO）は書かない。外から音を流し込む場合（EXTRA_AUDIO_SOURCE）は、
-        許可が無くても認識できることを実機（Android 16）で確かめた（docs/構成.md の 2.5）。
+        端末の音声認識（C 案）は、外から音を流し込む場合（EXTRA_AUDIO_SOURCE）は録音の許可が無くても使える
+        （実機の Android 16 で確かめた）。端末の音の取り込みに要る許可と X の <queries> は、本体の manifest にある。
     -->
 
     <application>
         <activity
             android:name=".debug.AsrProbeActivity"
             android:exported="true" />
+        <activity
+            android:name=".debug.CaptureProbeActivity"
+            android:exported="true" />
+        <service
+            android:name=".debug.CaptureProbeService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
     </application>
 
 </manifest>
