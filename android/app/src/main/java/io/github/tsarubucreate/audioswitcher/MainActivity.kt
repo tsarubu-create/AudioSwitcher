@@ -71,8 +71,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -610,10 +608,7 @@ private fun PlayerSection(
     val shape = RoundedCornerShape(12.dp)
     if (state.playWhenReady) {
         OutlinedButton(
-            onClick = {
-                controller?.pause()
-                controller?.stop()
-            },
+            onClick = { controller?.let(PcPlayback::stop) },
             enabled = controller != null,
             shape = shape,
             // 罫の色の枠はダークの地でほとんど見えないので、枠は鉛・文字は墨にして押せるものだと分かるようにする。
@@ -627,20 +622,10 @@ private fun PlayerSection(
         Button(
             onClick = {
                 val c = controller ?: return@Button
-                val url = StreamAddress.toStreamUrl(address)
-                if (url == null) {
+                if (!PcPlayback.start(c, address)) {
                     editingAddress = true
                     addressError = ADDRESS_HINT
-                    return@Button
                 }
-                c.setMediaItem(
-                    MediaItem.Builder()
-                        .setUri(url)
-                        .setMediaMetadata(MediaMetadata.Builder().setTitle("PC の音").setArtist(address.trim()).build())
-                        .build(),
-                )
-                c.prepare()
-                c.play()
             },
             enabled = controller != null,
             shape = shape,
