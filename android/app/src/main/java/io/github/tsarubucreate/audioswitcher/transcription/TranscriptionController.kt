@@ -15,6 +15,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.time.ZonedDateTime
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * 再生サービス（PC の音）と取り込みサービス（端末の音。docs/構成.md の 2.7）の中で文字起こしを動かす。
@@ -98,7 +99,14 @@ class TranscriptionController(private val context: Context, private val settings
                 }
             },
         )
-        val assembler = TranscriptAssembler { line -> worker.execute { writer.writeLine(line) } }
+        val assembler = TranscriptAssembler { line ->
+            try {
+                worker.execute { writer.writeLine(line) }
+            } catch (e: RejectedExecutionException) {
+                // 閉じたあと（release のあと）に届いた行。送る役の行は閉じる前に書き終えるので、端末の音声認識の遅れた行など。
+                Log.w(TAG, "止めたあとに届いた行を書けなかった（${line.length}文字）", e)
+            }
+        }
         transcriber.start(object : Transcriber.Listener {
             override fun reserve() = assembler.reserve()
 
@@ -137,8 +145,10 @@ class TranscriptionController(private val context: Context, private val settings
 
     fun release() {
         stop()
-        // 送る役はアプリで1本なので閉じない（送り終えるまで続ける）。
-        worker.shutdown()
+        // 作業スレッドは、止めたときに送った最後の区間の行を書き終えてから閉じる。
+        // stop() の後片付け（溜めた区間を送る役へ渡す）が作業スレッドで済んだあとに、送る役の列の最後へ「閉じる」を並べる
+        // （送る役は1本で順に送るので、それまでの区間の行は、閉じる前に作業スレッドへ渡し終える）。送る役そのものは閉じない。
+        worker.execute { sender.execute { worker.shutdown() } }
     }
 
     /**
