@@ -131,6 +131,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         handler.removeCallbacks(retry)
         playbackStart.clear()
+        AudioWidget.update(this)
         transcriptionSettings.unregisterListener(transcriptionToggle)
         transcription.release()
         session?.run {
@@ -195,6 +196,8 @@ class PlaybackService : MediaSessionService() {
                 playbackStart.clear()
                 transcription.stop()
             }
+            // ホーム画面のウィジェットの丸いボタン（録音 / 停止）を描き直す。
+            AudioWidget.update(this@PlaybackService)
 
             if (!playWhenReady) {
                 handler.removeCallbacks(retry)

@@ -3,7 +3,6 @@ package io.github.tsarubucreate.audioswitcher
 import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
-import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
@@ -70,9 +69,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.core.content.edit
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -124,6 +120,12 @@ class MainActivity : ComponentActivity() {
     private var captureProblem by mutableStateOf<String?>(null)
     private val captureListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> refreshCapture() }
 
+    // ホーム画面のウィジェットで音を切り替えたら、画面にも合わせる。
+    private lateinit var appSettings: AppSettings
+    private val appSettingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        deviceSource = appSettings.deviceSource && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+    }
+
     // 端末の音: 録音の許可 → Android の画面のキャプチャの確かめ → 取り込みサービスを始める。
     private val requestRecordAudio = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) askCaptureConsent() else captureState.problem = "録音の許可が無いので、端末の音を取り込めません"
@@ -160,9 +162,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        darkTheme = if (prefs.contains(KEY_DARK_THEME)) prefs.getBoolean(KEY_DARK_THEME, false) else null
-        deviceSource = prefs.getBoolean(KEY_DEVICE_SOURCE, false) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        val settings = AppSettings(this)
+        appSettings = settings
+        settings.registerListener(appSettingsListener)
+        darkTheme = settings.darkTheme
+        deviceSource = settings.deviceSource && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
         captureState = CaptureState(this)
         refreshCapture()
         captureState.registerListener(captureListener)
@@ -209,8 +213,8 @@ class MainActivity : ComponentActivity() {
                     notice = notice,
                     startedAt = startedAt,
                     reduceMotion = reduceMotion,
-                    initialAddress = prefs.getString(KEY_ADDRESS, "") ?: "",
-                    onAddressSaved = { prefs.edit { putString(KEY_ADDRESS, it) } },
+                    initialAddress = settings.address,
+                    onAddressSaved = { settings.address = it },
                     onPaired = { keyStorage.save(it) },
                     onNoticeDone = { keyStorage.clearNotice() },
                     transcription = transcription,
@@ -223,7 +227,8 @@ class MainActivity : ComponentActivity() {
                     dark = dark,
                     onDarkChange = {
                         darkTheme = it
-                        prefs.edit { putBoolean(KEY_DARK_THEME, it) }
+                        settings.darkTheme = it
+                        AudioWidget.update(this)
                     },
                     device = DeviceUiState(
                         selected = deviceSource,
@@ -234,7 +239,8 @@ class MainActivity : ComponentActivity() {
                     ),
                     onSourceChange = {
                         deviceSource = it
-                        prefs.edit { putBoolean(KEY_DEVICE_SOURCE, it) }
+                        settings.deviceSource = it
+                        AudioWidget.update(this)
                     },
                     onDeviceStart = {
                         captureState.problem = null
@@ -251,6 +257,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        appSettings.unregisterListener(appSettingsListener)
         captureState.unregisterListener(captureListener)
         keyStorage.unregisterListener(keyListener)
         playbackStart.unregisterListener(startListener)
@@ -338,10 +345,6 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val TAG = "MainActivity"
-        const val PREFS_NAME = "settings"
-        const val KEY_ADDRESS = "address"
-        const val KEY_DARK_THEME = "dark_theme"
-        const val KEY_DEVICE_SOURCE = "device_source"
 
         /** フォルダを選ぶ画面で最初に開く場所（Obsidian の Vault の中。docs/構成.md の 2.5）。 */
         val VAULT_FOLDER_HINT: Uri = DocumentsContract.buildDocumentUri(
@@ -610,10 +613,7 @@ private fun PlayerSection(
     val shape = RoundedCornerShape(12.dp)
     if (state.playWhenReady) {
         OutlinedButton(
-            onClick = {
-                controller?.pause()
-                controller?.stop()
-            },
+            onClick = { controller?.let(PcPlayback::stop) },
             enabled = controller != null,
             shape = shape,
             // 罫の色の枠はダークの地でほとんど見えないので、枠は鉛・文字は墨にして押せるものだと分かるようにする。
@@ -627,20 +627,10 @@ private fun PlayerSection(
         Button(
             onClick = {
                 val c = controller ?: return@Button
-                val url = StreamAddress.toStreamUrl(address)
-                if (url == null) {
+                if (!PcPlayback.start(c, address)) {
                     editingAddress = true
                     addressError = ADDRESS_HINT
-                    return@Button
                 }
-                c.setMediaItem(
-                    MediaItem.Builder()
-                        .setUri(url)
-                        .setMediaMetadata(MediaMetadata.Builder().setTitle("PC の音").setArtist(address.trim()).build())
-                        .build(),
-                )
-                c.prepare()
-                c.play()
             },
             enabled = controller != null,
             shape = shape,

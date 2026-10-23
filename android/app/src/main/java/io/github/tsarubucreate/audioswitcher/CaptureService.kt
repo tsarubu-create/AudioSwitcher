@@ -85,6 +85,7 @@ class CaptureService : Service() {
         holdLocks()
         running = true
         state.markStarted(SystemClock.elapsedRealtime())
+        AudioWidget.update(this)
         reader = Thread({ readLoop(built) }, "capture-read").apply { start() }
         Log.i(TAG, "端末の音の取り込みを始めた")
         return START_NOT_STICKY
@@ -167,6 +168,7 @@ class CaptureService : Service() {
         transcription.stop()
         releaseLocks()
         state.clear()
+        AudioWidget.update(this)
         if (wasRunning) Log.i(TAG, "端末の音の取り込みを止めた")
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ホーム画面のウィジェット（横 2 マス・縦 1 マス。docs/画面.md）。色は AudioWidget がアプリのダークの選択に合わせて入れる。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg_light"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="10dp"
+    android:paddingEnd="10dp">
+
+    <ImageView
+        android:id="@+id/widget_record"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="@drawable/widget_circle_idle_light"
+        android:contentDescription="@string/widget_record"
+        android:padding="8dp"
+        android:src="@drawable/ic_widget_record_light" />
+
+    <LinearLayout
+        android:id="@+id/widget_toggle"
+        android:layout_width="0dp"
+        android:layout_height="32dp"
+        android:layout_marginStart="10dp"
+        android:layout_weight="1"
+        android:background="@drawable/widget_toggle_light"
+        android:orientation="horizontal"
+        android:padding="2dp">
+
+        <TextView
+            android:id="@+id/widget_source_pc"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/widget_source_pc"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/widget_source_device"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/widget_source_device"
+            android:textSize="13sp" />
+    </LinearLayout>
+</LinearLayout>
