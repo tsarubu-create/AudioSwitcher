@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -99,7 +98,7 @@ class WidgetActionActivity : ComponentActivity() {
     }
 
     private fun askCaptureConsent() {
-        captureConsent.launch(getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent())
+        captureConsent.launch(CaptureService.consentIntent(this))
     }
 
     /** 再生サービスに繋いでから [action] を行う。繋げなければアプリの画面を開く。 */
