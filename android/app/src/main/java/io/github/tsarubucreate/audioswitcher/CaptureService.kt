@@ -16,6 +16,7 @@ import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -235,6 +236,20 @@ class CaptureService : Service() {
 
         // 記録は最大6時間（docs/構成.md の 2.5）。止め忘れてもロックが残り続けないよう、余裕を見て7時間で切れるようにする。
         private const val WAKE_LOCK_TIMEOUT_MS = 7 * 60 * 60 * 1000L
+
+        /**
+         * Android の画面のキャプチャの確かめを出す Intent（始めるたびに出す。docs/構成.md の 2.7）。
+         * Android 14 以降は「画面全体」だけにして、「開始」を押すだけで済むようにする（「1つのアプリ」を選ぶ手数を省く）。
+         * 映像は取り込まない（createVirtualDisplay を呼ばない）ので、画面全体に同意しても取り込むのは X の音だけ。
+         */
+        fun consentIntent(context: Context): Intent {
+            val manager = context.getSystemService(MediaProjectionManager::class.java)
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+            } else {
+                manager.createScreenCaptureIntent()
+            }
+        }
 
         /** 画面の「停止」から止める。 */
         fun stop(context: Context) {

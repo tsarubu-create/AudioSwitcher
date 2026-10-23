@@ -5,7 +5,6 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
-import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
 import android.net.Uri
@@ -284,7 +283,7 @@ class MainActivity : ComponentActivity() {
 
     /** Android の画面のキャプチャの確かめを出す（端末の音を取り込むのに要る。始めるたびに出る）。 */
     private fun askCaptureConsent() {
-        captureConsent.launch(getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent())
+        captureConsent.launch(CaptureService.consentIntent(this))
     }
 
     private fun refreshTranscription() {
